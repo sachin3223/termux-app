@@ -1023,6 +1023,12 @@ public final class TerminalView extends View {
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
+        // If the STermux status bar is active, subtract its rows from the terminal row count
+        // so that the terminal session (winsize/stty) reports the correct usable rows.
+        int statusBarRows = (mEmulator != null && mEmulator.mStatusBarLines != null)
+            ? mEmulator.mStatusBarLines.length : 0;
+        newRows = Math.max(4, newRows - statusBarRows);
+
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
@@ -1055,17 +1061,40 @@ public final class TerminalView extends View {
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
+            // If OSC 9001 status bar just changed, resize the terminal so row count
+            // reflects the new usable area (status bar rows excluded from winsize).
+            if (mEmulator.mStatusBarChanged) {
+                mEmulator.mStatusBarChanged = false;
+                updateSize();
+                // updateSize() calls invalidate() if rows changed — return early to
+                // let the fresh draw happen with corrected dimensions.
+                return;
+            }
+
             // render the terminal view and highlight any selected text
             int[] sel = mDefaultSelectors;
             if (mTextSelectionCursorController != null) {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
+            // If the STermux status bar is active, push terminal rendering down
+            // so the top N rows are reserved for the overlay.
+            int statusBarRows = (mEmulator.mStatusBarLines != null)
+                ? mEmulator.mStatusBarLines.length : 0;
+            if (statusBarRows > 0) {
+                canvas.save();
+                canvas.translate(0, statusBarRows * mRenderer.mFontLineSpacing);
+            }
+
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
 
+            if (statusBarRows > 0) {
+                canvas.restore();
+            }
+
             // Render the STermux status bar overlay (OSC 9001) on top.
-            // This is independent of the terminal buffer: clear, scroll, alt-buffer won't affect it.
-            if (mEmulator.mStatusBarLines != null) {
+            // Independent of terminal buffer: clear/scroll/alt-buffer won't affect it.
+            if (statusBarRows > 0) {
                 mRenderer.renderStatusBar(
                     mEmulator.mStatusBarLines,
                     canvas,

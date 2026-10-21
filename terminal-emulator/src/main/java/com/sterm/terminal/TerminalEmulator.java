@@ -306,6 +306,12 @@ public final class TerminalEmulator {
     public String[] mStatusBarLines = null;
 
     /**
+     * Set to true when {@link #mStatusBarLines} changes so that {@code TerminalView}
+     * knows to call {@code updateSize()} to adjust the reported row count.
+     */
+    public boolean mStatusBarChanged = false;
+
+    /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
      * without additional checks.
      *
@@ -3028,6 +3034,7 @@ public final class TerminalEmulator {
                         // Ignore malformed base64.
                     }
                 }
+                mStatusBarChanged = true;
                 break;
             default:
                 unknownParameter(value);
