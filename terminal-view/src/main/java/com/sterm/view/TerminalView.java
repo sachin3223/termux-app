@@ -82,6 +82,7 @@ public final class TerminalView extends View {
 
     /** What was left in from scrolling movement. */
     float mScrollRemainder;
+    float mScrollRemainderX;
 
     /** If non-zero, this is the last unicode code point received if that was a combining character. */
     int mCombiningAccent;
@@ -142,6 +143,7 @@ public final class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
+                mScrollRemainderX = 0.0f;
                 if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
@@ -181,6 +183,15 @@ public final class TerminalView extends View {
                     int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
                     mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
                     doScroll(e, deltaRows);
+
+                    if (mEmulator.isMouseTrackingActive()) {
+                        distanceX += mScrollRemainderX;
+                        int deltaCols = (int) (distanceX / mRenderer.mFontWidth);
+                        mScrollRemainderX = distanceX - deltaCols * mRenderer.mFontWidth;
+                        if (deltaCols != 0) {
+                            doHorizontalScroll(e, deltaCols);
+                        }
+                    }
                 }
                 return true;
             }
@@ -558,7 +569,8 @@ public final class TerminalView extends View {
         int[] columnAndRow = getColumnAndRow(e, false);
         int x = columnAndRow[0] + 1;
         int y = columnAndRow[1] + 1;
-        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
+        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON ||
+                        button == TerminalEmulator.MOUSE_WHEELLEFT_BUTTON || button == TerminalEmulator.MOUSE_WHEELRIGHT_BUTTON)) {
             if (mMouseStartDownTime == e.getDownTime()) {
                 x = mMouseScrollStartX;
                 y = mMouseScrollStartY;
@@ -589,14 +601,34 @@ public final class TerminalView extends View {
         }
     }
 
+    /** Perform a horizontal scroll by sending mouse wheel left/right codes. */
+    void doHorizontalScroll(MotionEvent event, int colsRight) {
+        boolean right = colsRight > 0;
+        int amount = Math.abs(colsRight);
+        for (int i = 0; i < amount; i++) {
+            if (mEmulator.isMouseTrackingActive()) {
+                sendMouseEventCode(event, right ? TerminalEmulator.MOUSE_WHEELRIGHT_BUTTON : TerminalEmulator.MOUSE_WHEELLEFT_BUTTON, true);
+            }
+        }
+    }
+
     /** Overriding {@link View#onGenericMotionEvent(MotionEvent)}. */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         if (mEmulator != null && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
             // Handle mouse wheel scrolling.
-            boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
-            doScroll(event, up ? -3 : 3);
-            return true;
+            boolean handled = false;
+            float vscroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (vscroll != 0.0f) {
+                doScroll(event, vscroll > 0.0f ? -3 : 3);
+                handled = true;
+            }
+            float hscroll = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            if (hscroll != 0.0f) {
+                doHorizontalScroll(event, hscroll > 0.0f ? 3 : -3);
+                handled = true;
+            }
+            return handled;
         }
         return false;
     }
