@@ -1063,6 +1063,17 @@ public final class TerminalView extends View {
 
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
 
+            // Render the STermux status bar overlay (OSC 9001) on top.
+            // This is independent of the terminal buffer: clear, scroll, alt-buffer won't affect it.
+            if (mEmulator.mStatusBarLines != null) {
+                mRenderer.renderStatusBar(
+                    mEmulator.mStatusBarLines,
+                    canvas,
+                    mEmulator.mColors.mCurrentColors,
+                    getWidth()
+                );
+            }
+
             // render the text selection handles
             renderTextSelection();
         }

@@ -299,6 +299,13 @@ public final class TerminalEmulator {
     private int mOscType = -1;
 
     /**
+     * Status bar lines set via OSC 9001 escape sequence.
+     * Max 5 lines, drawn as an overlay by the renderer (not part of the terminal buffer).
+     * Cleared by setting OSC 9001 with empty content: ESC]9001;\a
+     */
+    public String[] mStatusBarLines = null;
+
+    /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
      * without additional checks.
      *
@@ -3000,6 +3007,28 @@ public final class TerminalEmulator {
 
                 // Free image from memory for any non `MultipartFile=` related commands.
                 mITermImage = null;
+            case 9001: // STermux status bar: OSC 9001 ; <base64-encoded lines> BEL
+                // Lines are separated by \n in the decoded text.
+                // Max 5 lines displayed. Lines beyond 5 are ignored.
+                // Long lines are clipped (no wrapping). Empty content clears the bar.
+                if (textParameter.isEmpty()) {
+                    mStatusBarLines = null;
+                } else {
+                    try {
+                        byte[] decoded = Base64.decode(textParameter, Base64.DEFAULT);
+                        String content = new String(decoded, StandardCharsets.UTF_8);
+                        String[] allLines = content.split("\n", -1);
+                        int count = Math.min(allLines.length, 5);
+                        String[] lines = new String[count];
+                        for (int li = 0; li < count; li++) {
+                            lines[li] = allLines[li];
+                        }
+                        mStatusBarLines = lines;
+                    } catch (Exception e) {
+                        // Ignore malformed base64.
+                    }
+                }
+                break;
             default:
                 unknownParameter(value);
                 break;

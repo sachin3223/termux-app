@@ -273,4 +273,55 @@ public final class TerminalRenderer {
     public int getFontLineSpacing() {
         return mFontLineSpacing;
     }
+
+    /**
+     * Render the STermux status bar overlay (OSC 9001).
+     * Drawn on top of the terminal canvas, independent of the terminal buffer.
+     * Lines are clipped to view width — no wrapping. Max 5 lines.
+     *
+     * @param lines   Lines to display (from {@code TerminalEmulator.mStatusBarLines}).
+     * @param canvas  The canvas to draw on.
+     * @param palette The current color palette (same as the terminal).
+     * @param viewWidth The pixel width of the terminal view (for clipping).
+     */
+    public void renderStatusBar(String[] lines, Canvas canvas, int[] palette, int viewWidth) {
+        if (lines == null || lines.length == 0) return;
+
+        final int bgColor = palette[TextStyle.COLOR_INDEX_BACKGROUND];
+        final int fgColor = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+        final int lineCount = Math.min(lines.length, 5);
+
+        mTextPaint.setAntiAlias(true);
+        mTextPaint.setFakeBoldText(false);
+        mTextPaint.setUnderlineText(false);
+        mTextPaint.setTextSkewX(0.f);
+        mTextPaint.setStrikeThruText(false);
+        mTextPaint.setTextSize(mTextSize);
+        mTextPaint.setTypeface(mTypeface);
+
+        // Draw background and text for each line, top to bottom.
+        float heightOffset = mFontLineSpacingAndAscent;
+        for (int i = 0; i < lineCount; i++) {
+            heightOffset += mFontLineSpacing;
+            float top = heightOffset - mFontLineSpacing;
+            float bottom = heightOffset;
+
+            // Draw background rectangle for this line.
+            mTextPaint.setColor(bgColor);
+            canvas.drawRect(0, top, viewWidth, bottom, mTextPaint);
+
+            // Clip drawing to view width so long lines don't wrap or bleed.
+            canvas.save();
+            canvas.clipRect(0, top, viewWidth, bottom);
+
+            // Draw the text.
+            mTextPaint.setColor(fgColor);
+            String line = lines[i];
+            if (line != null && !line.isEmpty()) {
+                canvas.drawText(line, 0, line.length(), 0, heightOffset - mFontLineSpacingAndAscent, mTextPaint);
+            }
+
+            canvas.restore();
+        }
+    }
 }
