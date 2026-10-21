@@ -557,7 +557,9 @@ public final class TerminalView extends View {
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
         int column = (int) (event.getX() / mRenderer.mFontWidth);
-        int row = (int) ((event.getY() - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
+        int barHeightPx = getStatusBarHeightPx();
+        int row = (int) ((event.getY() - barHeightPx - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
+        if (row < 0) row = 0;
         if (relativeToScroll) {
             row += mTopRow;
         }
@@ -1013,25 +1015,38 @@ public final class TerminalView extends View {
         updateSize();
     }
 
+    public int getStatusBarBlockSizePx() {
+        float density = getContext().getResources().getDisplayMetrics().density;
+        return Math.max(1, Math.round(TerminalEmulator.STATUS_BAR_BLOCK_SIZE_DP * density));
+    }
+
+    public int getStatusBarHeightPx() {
+        return getStatusBarBlockSizePx();
+    }
+
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
 
+        int barHeightPx = getStatusBarHeightPx();
+        int blockSizePx = getStatusBarBlockSizePx();
+        int blockCount = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
+        if (mEmulator != null) {
+            mEmulator.mStatusBarBlockCount = blockCount;
+        }
+
         // Set to 80 and 24 if you want to enable vttest.
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
-        int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
-
-        // If the STermux status bar is active, subtract its rows from the terminal row count
-        // so that the terminal session (winsize/stty) reports the correct usable rows.
-        int statusBarRows = (mEmulator != null && mEmulator.mStatusBarLines != null)
-            ? mEmulator.mStatusBarLines.length : 0;
-        newRows = Math.max(4, newRows - statusBarRows);
+        int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent - barHeightPx) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
+            if (mEmulator != null) {
+                mEmulator.mStatusBarBlockCount = blockCount;
+            }
             mClient.onEmulatorSet();
 
             // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
@@ -1061,47 +1076,41 @@ public final class TerminalView extends View {
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
-            // If OSC 9001 status bar just changed, resize the terminal so row count
-            // reflects the new usable area (status bar rows excluded from winsize).
-            if (mEmulator.mStatusBarChanged) {
-                mEmulator.mStatusBarChanged = false;
-                updateSize();
-                // updateSize() calls invalidate() if rows changed — return early to
-                // let the fresh draw happen with corrected dimensions.
-                return;
-            }
-
             // render the terminal view and highlight any selected text
             int[] sel = mDefaultSelectors;
             if (mTextSelectionCursorController != null) {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
-            // If the STermux status bar is active, push terminal rendering down
-            // so the top N rows are reserved for the overlay.
-            int statusBarRows = (mEmulator.mStatusBarLines != null)
-                ? mEmulator.mStatusBarLines.length : 0;
-            if (statusBarRows > 0) {
-                canvas.save();
-                canvas.translate(0, statusBarRows * mRenderer.mFontLineSpacing);
+            int barHeightPx = getStatusBarHeightPx();
+            int blockSizePx = getStatusBarBlockSizePx();
+            int viewWidth = getWidth();
+            int blockCount = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
+            int remainder = (blockSizePx > 0) ? (viewWidth % blockSizePx) : 0;
+            int padLeft = remainder / 2;
+
+            if (mEmulator.mStatusBarBlockCount != blockCount) {
+                mEmulator.mStatusBarBlockCount = blockCount;
             }
 
+            // Push terminal rendering down so top area is reserved for the block status bar.
+            canvas.save();
+            canvas.translate(0, barHeightPx);
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+            canvas.restore();
 
-            if (statusBarRows > 0) {
-                canvas.restore();
-            }
-
-            // Render the STermux status bar overlay (OSC 9001) on top.
+            // Render the STermux pixel block status bar overlay (OSC 9001) on top.
             // Independent of terminal buffer: clear/scroll/alt-buffer won't affect it.
-            if (statusBarRows > 0) {
-                mRenderer.renderStatusBar(
-                    mEmulator.mStatusBarLines,
-                    canvas,
-                    mEmulator.mColors.mCurrentColors,
-                    getWidth()
-                );
-            }
+            mRenderer.renderBlockBar(
+                mEmulator.mStatusBarBlocks,
+                blockCount,
+                canvas,
+                mEmulator.mColors.mCurrentColors,
+                viewWidth,
+                barHeightPx,
+                padLeft,
+                blockSizePx
+            );
 
             // render the text selection handles
             renderTextSelection();
@@ -1121,7 +1130,7 @@ public final class TerminalView extends View {
     }
 
     public int getCursorY(float y) {
-        return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
+        return (int) (((y - getStatusBarHeightPx() - 40) / mRenderer.mFontLineSpacing) + mTopRow);
     }
 
     public int getPointX(int cx) {
@@ -1132,7 +1141,7 @@ public final class TerminalView extends View {
     }
 
     public int getPointY(int cy) {
-        return Math.round((cy - mTopRow) * mRenderer.mFontLineSpacing);
+        return Math.round((cy - mTopRow) * mRenderer.mFontLineSpacing) + getStatusBarHeightPx();
     }
 
     public int getTopRow() {

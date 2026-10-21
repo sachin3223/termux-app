@@ -299,17 +299,23 @@ public final class TerminalEmulator {
     private int mOscType = -1;
 
     /**
-     * Status bar lines set via OSC 9001 escape sequence.
-     * Max 5 lines, drawn as an overlay by the renderer (not part of the terminal buffer).
-     * Cleared by setting OSC 9001 with empty content: ESC]9001;\a
+     * Block size for the OSC 9001 pixel block bar, in dp.
+     * Each block is a square of this size. Adjust to taste; 4dp is the default.
      */
-    public String[] mStatusBarLines = null;
+    public static final int STATUS_BAR_BLOCK_SIZE_DP = 4;
 
     /**
-     * Set to true when {@link #mStatusBarLines} changes so that {@code TerminalView}
-     * knows to call {@code updateSize()} to adjust the reported row count.
+     * ARGB colors for each block in the OSC 9001 block bar.
+     * null = bar not active. Length may differ from {@link #mStatusBarBlockCount}
+     * if the screen was resized after the last set; renderer uses min(length, count).
      */
-    public boolean mStatusBarChanged = false;
+    public int[] mStatusBarBlocks = null;
+
+    /**
+     * Number of blocks that fit across the screen width.
+     * Set by {@code TerminalView} after layout. Used for query responses (OSC 9001;4).
+     */
+    public int mStatusBarBlockCount = 0;
 
     /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
@@ -3013,29 +3019,102 @@ public final class TerminalEmulator {
 
                 // Free image from memory for any non `MultipartFile=` related commands.
                 mITermImage = null;
-            case 9001: // STermux status bar: OSC 9001 ; <base64-encoded lines> BEL
-                // Lines are separated by \n in the decoded text.
-                // Max 5 lines displayed. Lines beyond 5 are ignored.
-                // Long lines are clipped (no wrapping). Empty content clears the bar.
+            case 9001: {
+                // STermux OSC 9001 pixel block bar protocol.
+                //
+                // Format:  OSC 9001 ; <subcmd> [ ; <args> ] BEL
+                //
+                //   (empty)          → clear/reset bar
+                //   0 ; <n>          → get block n color  → \e]9001;0;<n>;<RRGGBB>\a
+                //   1 ; <n> ; <RRGGBB> → set block n color
+                //   2 ; <C>,<C>,…   → set all blocks  (6-char hex RRGGBB each)
+                //   3               → get all colors   → \e]9001;3;<C>,<C>,…\a
+                //   4               → get block count  → \e]9001;4;<count>\a
+
                 if (textParameter.isEmpty()) {
-                    mStatusBarLines = null;
-                } else {
-                    try {
-                        byte[] decoded = Base64.decode(textParameter, Base64.DEFAULT);
-                        String content = new String(decoded, StandardCharsets.UTF_8);
-                        String[] allLines = content.split("\n", -1);
-                        int count = Math.min(allLines.length, 5);
-                        String[] lines = new String[count];
-                        for (int li = 0; li < count; li++) {
-                            lines[li] = allLines[li];
-                        }
-                        mStatusBarLines = lines;
-                    } catch (Exception e) {
-                        // Ignore malformed base64.
-                    }
+                    // clear bar
+                    mStatusBarBlocks = null;
+                    break;
                 }
-                mStatusBarChanged = true;
+
+                // Split off the sub-command number from the rest.
+                int semi1 = textParameter.indexOf(';');
+                String subcmdStr = (semi1 < 0) ? textParameter : textParameter.substring(0, semi1);
+                String rest1     = (semi1 < 0) ? "" : textParameter.substring(semi1 + 1);
+
+                int subcmd;
+                try { subcmd = Integer.parseInt(subcmdStr.trim()); }
+                catch (NumberFormatException e) { break; }
+
+                switch (subcmd) {
+                    case 0: { // get block n color
+                        if (mStatusBarBlocks == null || rest1.isEmpty()) break;
+                        try {
+                            int n = Integer.parseInt(rest1.trim());
+                            if (n >= 0 && n < mStatusBarBlocks.length) {
+                                int c = mStatusBarBlocks[n];
+                                mSession.write(String.format(Locale.ENGLISH,
+                                    "\033]9001;0;%d;%06X\007", n, c & 0xFFFFFF));
+                            }
+                        } catch (NumberFormatException e) { /* ignore */ }
+                        break;
+                    }
+                    case 1: { // set block n color: 1;<n>;<RRGGBB>
+                        int semi2 = rest1.indexOf(';');
+                        if (semi2 < 0) break;
+                        String nStr    = rest1.substring(0, semi2).trim();
+                        String colorStr = rest1.substring(semi2 + 1).trim();
+                        try {
+                            int n = Integer.parseInt(nStr);
+                            int color = (int)(0xFF000000L | Long.parseLong(colorStr, 16));
+                            // Auto-initialize block array if needed.
+                            if (mStatusBarBlocks == null && mStatusBarBlockCount > 0) {
+                                mStatusBarBlocks = new int[mStatusBarBlockCount];
+                            }
+                            if (mStatusBarBlocks != null && n >= 0 && n < mStatusBarBlocks.length) {
+                                mStatusBarBlocks[n] = color;
+                            }
+                        } catch (NumberFormatException e) { /* ignore */ }
+                        break;
+                    }
+                    case 2: { // set all blocks: 2;<RRGGBB>,<RRGGBB>,...
+                        if (rest1.isEmpty()) break;
+                        String[] parts = rest1.split(",");
+                        int[] blocks = new int[parts.length];
+                        for (int bi = 0; bi < parts.length; bi++) {
+                            try {
+                                blocks[bi] = (int)(0xFF000000L | Long.parseLong(parts[bi].trim(), 16));
+                            } catch (NumberFormatException e) {
+                                blocks[bi] = 0xFF000000; // opaque black on bad input
+                            }
+                        }
+                        mStatusBarBlocks = blocks;
+                        break;
+                    }
+                    case 3: { // get all colors
+                        if (mStatusBarBlocks == null) {
+                            mSession.write("\033]9001;3;\007");
+                            break;
+                        }
+                        StringBuilder sb = new StringBuilder();
+                        for (int bi = 0; bi < mStatusBarBlocks.length; bi++) {
+                            if (bi > 0) sb.append(',');
+                            sb.append(String.format(Locale.ENGLISH, "%06X",
+                                mStatusBarBlocks[bi] & 0xFFFFFF));
+                        }
+                        mSession.write(String.format(Locale.ENGLISH,
+                            "\033]9001;3;%s\007", sb));
+                        break;
+                    }
+                    case 4: { // get block count
+                        mSession.write(String.format(Locale.ENGLISH,
+                            "\033]9001;4;%d\007", mStatusBarBlockCount));
+                        break;
+                    }
+                    default: break;
+                }
                 break;
+            }
             default:
                 unknownParameter(value);
                 break;

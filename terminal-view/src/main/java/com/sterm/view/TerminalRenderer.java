@@ -275,53 +275,43 @@ public final class TerminalRenderer {
     }
 
     /**
-     * Render the STermux status bar overlay (OSC 9001).
-     * Drawn on top of the terminal canvas, independent of the terminal buffer.
-     * Lines are clipped to view width — no wrapping. Max 5 lines.
+     * Render the STermux pixel block status bar overlay (OSC 9001).
+     * Drawn at the top of the canvas, independent of the terminal buffer.
+     * Blocks are square (blockSizePx x blockSizePx) and centered horizontally.
      *
-     * @param lines   Lines to display (from {@code TerminalEmulator.mStatusBarLines}).
-     * @param canvas  The canvas to draw on.
-     * @param palette The current color palette (same as the terminal).
-     * @param viewWidth The pixel width of the terminal view (for clipping).
+     * @param blocks      Array of ARGB colors for each block, or null if bar is clear.
+     * @param blockCount  Total number of blocks across the width.
+     * @param canvas      Canvas to draw on.
+     * @param palette     Terminal palette for background color fallback.
+     * @param viewWidth   Width of the view.
+     * @param barHeightPx Total height of the bar area in pixels.
+     * @param padLeft     Left padding in pixels to center the blocks.
+     * @param blockSizePx Pixel width and height of each square block.
      */
-    public void renderStatusBar(String[] lines, Canvas canvas, int[] palette, int viewWidth) {
-        if (lines == null || lines.length == 0) return;
+    public void renderBlockBar(int[] blocks, int blockCount, Canvas canvas, int[] palette,
+                               int viewWidth, int barHeightPx, int padLeft, int blockSizePx) {
+        if (barHeightPx <= 0 || viewWidth <= 0) return;
 
-        final int bgColor = palette[TextStyle.COLOR_INDEX_BACKGROUND];
-        final int fgColor = palette[TextStyle.COLOR_INDEX_FOREGROUND];
-        final int lineCount = Math.min(lines.length, 5);
+        final int bgColor = (palette != null && palette.length > TextStyle.COLOR_INDEX_BACKGROUND)
+                ? palette[TextStyle.COLOR_INDEX_BACKGROUND] : 0xFF000000;
 
-        mTextPaint.setAntiAlias(true);
-        mTextPaint.setFakeBoldText(false);
-        mTextPaint.setUnderlineText(false);
-        mTextPaint.setTextSkewX(0.f);
-        mTextPaint.setStrikeThruText(false);
-        mTextPaint.setTextSize(mTextSize);
-        mTextPaint.setTypeface(mTypeface);
+        mTextPaint.setStyle(Paint.Style.FILL);
 
-        // Draw background and text for each line, top to bottom.
-        float heightOffset = mFontLineSpacingAndAscent;
-        for (int i = 0; i < lineCount; i++) {
-            heightOffset += mFontLineSpacing;
-            float top = heightOffset - mFontLineSpacing;
-            float bottom = heightOffset;
+        // Draw background across the entire top bar area
+        mTextPaint.setColor(bgColor);
+        canvas.drawRect(0, 0, viewWidth, barHeightPx, mTextPaint);
 
-            // Draw background rectangle for this line.
-            mTextPaint.setColor(bgColor);
-            canvas.drawRect(0, top, viewWidth, bottom, mTextPaint);
+        if (blocks == null || blockCount <= 0 || blockSizePx <= 0) return;
 
-            // Clip drawing to view width so long lines don't wrap or bleed.
-            canvas.save();
-            canvas.clipRect(0, top, viewWidth, bottom);
-
-            // Draw the text.
-            mTextPaint.setColor(fgColor);
-            String line = lines[i];
-            if (line != null && !line.isEmpty()) {
-                canvas.drawText(line, 0, line.length(), 0, heightOffset - mFontLineSpacingAndAscent, mTextPaint);
-            }
-
-            canvas.restore();
+        int limit = Math.min(blockCount, blocks.length);
+        for (int i = 0; i < limit; i++) {
+            int color = blocks[i];
+            mTextPaint.setColor(color);
+            float left = padLeft + i * blockSizePx;
+            float top = 0;
+            float right = left + blockSizePx;
+            float bottom = top + blockSizePx;
+            canvas.drawRect(left, top, right, bottom, mTextPaint);
         }
     }
 }
