@@ -319,6 +319,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // notification with the crash details if it did
         TermuxCrashUtils.notifyAppCrashFromCrashLogFile(this, LOG_TAG);
 
+        requestAudioPermission();
+
         mIsOnResumeAfterOnCreate = false;
     }
 
@@ -789,6 +791,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }.start();
     }
 
+    public static final int REQUEST_GRANT_AUDIO_PERMISSION = 2000;
+
+    public void requestAudioPermission() {
+        if (!PermissionUtils.checkPermission(this, android.Manifest.permission.RECORD_AUDIO)) {
+            PermissionUtils.requestPermission(this, android.Manifest.permission.RECORD_AUDIO, REQUEST_GRANT_AUDIO_PERMISSION);
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -804,6 +814,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         Logger.logVerbose(LOG_TAG, "onRequestPermissionsResult: requestCode: " + requestCode + ", permissions: "  + Arrays.toString(permissions) + ", grantResults: "  + Arrays.toString(grantResults));
         if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
             requestStoragePermission(true);
+        } else if (requestCode == REQUEST_GRANT_AUDIO_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Logger.logInfoAndShowToast(this, LOG_TAG, "Microphone permission granted");
+            }
         }
     }
 
