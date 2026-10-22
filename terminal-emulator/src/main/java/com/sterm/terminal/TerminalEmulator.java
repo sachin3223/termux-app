@@ -2748,6 +2748,10 @@ public final class TerminalEmulator {
                     terminalControlArgsMaxLength = TerminalBitmap.MAX_BITMAP_SIZE +
                         /* `1337;File=inline=1;size=209715200;name=xxxxxxxxxxxxxxxxxxxxxxxx;width=8192px;height=8192px;preserveAspectRatio=1:` */ 150;
                     break;
+                case 9002:
+                    mIsFastPathOsc = true;
+                    mIgnoreCrLfForOsc = true;
+                    break;
             }
 
             if (terminalControlArgsCapacity != null) {
@@ -3131,6 +3135,12 @@ public final class TerminalEmulator {
                     }
                     default: break;
                 }
+                break;
+            }
+            case 9002: {
+                // STermux OSC 9002 native Android bridge protocol.
+                // Format: OSC 9002 ; <SUBCMD> [ ; <ARGS> ] BEL
+                mClient.onAndroidBridgeCommand(mSession, textParameter);
                 break;
             }
             default:

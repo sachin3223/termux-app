@@ -45,6 +45,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onAndroidBridgeCommand(@NonNull TerminalSession session, String command) {
+    }
+
+    @Override
     public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {
     }
 

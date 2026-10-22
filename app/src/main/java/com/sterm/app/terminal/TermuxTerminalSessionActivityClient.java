@@ -244,6 +244,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             termuxSession.getExecutionCommand().mPid = pid;
     }
 
+    @Override
+    public void onAndroidBridgeCommand(@NonNull TerminalSession session, String command) {
+        AndroidBridgeHandler.handleCommand(mActivity, session, command);
+    }
+
 
     /**
      * Should be called when mActivity.onResetTerminalSession() is called
