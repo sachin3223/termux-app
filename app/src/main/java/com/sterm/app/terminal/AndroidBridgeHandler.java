@@ -26,7 +26,7 @@ import androidx.annotation.NonNull;
 
 import com.sterm.app.TermuxActivity;
 import com.sterm.shared.logger.Logger;
-import com.sterm.terminal.TerminalSession;
+import com.sterm.terminal.TerminalOutput;
 
 import java.util.Locale;
 
@@ -43,7 +43,7 @@ public final class AndroidBridgeHandler {
 
     private AndroidBridgeHandler() {}
 
-    public static void handleCommand(@NonNull Context context, @NonNull TerminalSession session, String textParameter) {
+    public static void handleCommand(@NonNull Context context, @NonNull TerminalOutput session, String textParameter) {
         if (textParameter == null || textParameter.trim().isEmpty() || "HELP".equalsIgnoreCase(textParameter.trim())) {
             session.write("\033]9002;HELP;TOAST,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK\007");
             return;
@@ -193,7 +193,7 @@ public final class AndroidBridgeHandler {
         }
     }
 
-    private static void handleClipboard(Context context, TerminalSession session, String rest) {
+    private static void handleClipboard(Context context, TerminalOutput session, String rest) {
         int semi = rest.indexOf(';');
         String sub = (semi < 0 ? rest : rest.substring(0, semi)).trim().toUpperCase(Locale.ENGLISH);
         String text = (semi < 0 ? "" : rest.substring(semi + 1));
@@ -217,7 +217,7 @@ public final class AndroidBridgeHandler {
         });
     }
 
-    private static void handleBattery(Context context, TerminalSession session, String sub) {
+    private static void handleBattery(Context context, TerminalOutput session, String sub) {
         Intent intent = null;
         try {
             intent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -285,7 +285,7 @@ public final class AndroidBridgeHandler {
         }
     }
 
-    private static void handleVolume(Context context, TerminalSession session, String rest) {
+    private static void handleVolume(Context context, TerminalOutput session, String rest) {
         int semi = rest.indexOf(';');
         String sub = (semi < 0 ? rest : rest.substring(0, semi)).trim().toUpperCase(Locale.ENGLISH);
         String arg = (semi < 0 ? "" : rest.substring(semi + 1)).trim();

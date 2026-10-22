@@ -28,6 +28,7 @@ import com.sterm.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.sterm.shared.termux.terminal.io.BellHandler;
 import com.sterm.shared.logger.Logger;
 import com.sterm.terminal.TerminalColors;
+import com.sterm.terminal.TerminalOutput;
 import com.sterm.terminal.TerminalSession;
 import com.sterm.terminal.TerminalSessionClient;
 import com.sterm.terminal.TextStyle;
@@ -245,7 +246,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
-    public void onAndroidBridgeCommand(@NonNull TerminalSession session, String command) {
+    public void onAndroidBridgeCommand(@NonNull TerminalOutput session, String command) {
         AndroidBridgeHandler.handleCommand(mActivity, session, command);
     }
 

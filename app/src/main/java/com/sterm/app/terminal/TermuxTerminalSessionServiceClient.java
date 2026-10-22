@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import com.sterm.app.TermuxService;
 import com.sterm.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.sterm.shared.termux.terminal.TermuxTerminalSessionClientBase;
+import com.sterm.terminal.TerminalOutput;
 import com.sterm.terminal.TerminalSession;
 import com.sterm.terminal.TerminalSessionClient;
 
@@ -29,7 +30,7 @@ public class TermuxTerminalSessionServiceClient extends TermuxTerminalSessionCli
     }
 
     @Override
-    public void onAndroidBridgeCommand(@NonNull TerminalSession session, String command) {
+    public void onAndroidBridgeCommand(@NonNull TerminalOutput session, String command) {
         AndroidBridgeHandler.handleCommand(mService, session, command);
     }
 

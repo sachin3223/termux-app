@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.sterm.shared.logger.Logger;
+import com.sterm.terminal.TerminalOutput;
 import com.sterm.terminal.TerminalSession;
 import com.sterm.terminal.TerminalSessionClient;
 
@@ -45,7 +46,7 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
-    public void onAndroidBridgeCommand(@NonNull TerminalSession session, String command) {
+    public void onAndroidBridgeCommand(@NonNull TerminalOutput session, String command) {
     }
 
     @Override

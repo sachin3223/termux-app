@@ -26,7 +26,7 @@ public interface TerminalSessionClient {
 
     void onTerminalCursorStateChange(boolean state);
 
-    void onAndroidBridgeCommand(@NonNull TerminalSession session, String command);
+    void onAndroidBridgeCommand(@NonNull TerminalOutput session, String command);
 
     void setTerminalShellPid(@NonNull TerminalSession session, int pid);
 
