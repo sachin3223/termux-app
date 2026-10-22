@@ -330,8 +330,9 @@ public final class AndroidBridgeHandler {
             } else {
                 service.actionReleaseWakeLock(true);
             }
-            session.write(String.format(Locale.ENGLISH,
-                "\033]9002;WAKELOCK;%s\007", service.isWakeLockHeld() ? "1" : "0"));
+            new Handler(Looper.getMainLooper()).post(() ->
+                Toast.makeText(context, "WakeLock " + (service.isWakeLockHeld() ? "ON" : "OFF"), Toast.LENGTH_SHORT).show()
+            );
         } catch (Throwable t) {
             Logger.logError(LOG_TAG, "WakeLock error: " + t.getMessage());
         }
