@@ -300,14 +300,14 @@ public final class TerminalEmulator {
 
     /**
      * Block size for the OSC 9001 pixel block bar, in dp.
-     * Each block is a square of this size. 4dp default.
+     * Each block is a square of this size. 3dp default.
      */
-    public static final int STATUS_BAR_BLOCK_SIZE_DP = 4;
+    public static final int STATUS_BAR_BLOCK_SIZE_DP = 3;
 
     /**
      * Number of vertical block rows for the OSC 9001 pixel block bar.
      */
-    public static final int STATUS_BAR_NUM_ROWS = 10;
+    public static final int STATUS_BAR_NUM_ROWS = 13;
 
     /**
      * ARGB colors for each block in the OSC 9001 2D block grid.
