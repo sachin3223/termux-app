@@ -1021,7 +1021,7 @@ public final class TerminalView extends View {
     }
 
     public int getStatusBarHeightPx() {
-        return getStatusBarBlockSizePx();
+        return TerminalEmulator.STATUS_BAR_NUM_ROWS * getStatusBarBlockSizePx();
     }
 
     /** Check if the terminal size in rows and columns should be updated. */
@@ -1032,9 +1032,9 @@ public final class TerminalView extends View {
 
         int barHeightPx = getStatusBarHeightPx();
         int blockSizePx = getStatusBarBlockSizePx();
-        int blockCount = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
+        int cols = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
         if (mEmulator != null) {
-            mEmulator.mStatusBarBlockCount = blockCount;
+            mEmulator.mStatusBarCols = cols;
         }
 
         // Set to 80 and 24 if you want to enable vttest.
@@ -1045,7 +1045,7 @@ public final class TerminalView extends View {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             if (mEmulator != null) {
-                mEmulator.mStatusBarBlockCount = blockCount;
+                mEmulator.mStatusBarCols = cols;
             }
             mClient.onEmulatorSet();
 
@@ -1085,12 +1085,12 @@ public final class TerminalView extends View {
             int barHeightPx = getStatusBarHeightPx();
             int blockSizePx = getStatusBarBlockSizePx();
             int viewWidth = getWidth();
-            int blockCount = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
+            int cols = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
             int remainder = (blockSizePx > 0) ? (viewWidth % blockSizePx) : 0;
             int padLeft = remainder / 2;
 
-            if (mEmulator.mStatusBarBlockCount != blockCount) {
-                mEmulator.mStatusBarBlockCount = blockCount;
+            if (mEmulator.mStatusBarCols != cols) {
+                mEmulator.mStatusBarCols = cols;
             }
 
             // Push terminal rendering down so top area is reserved for the block status bar.
@@ -1103,7 +1103,8 @@ public final class TerminalView extends View {
             // Independent of terminal buffer: clear/scroll/alt-buffer won't affect it.
             mRenderer.renderBlockBar(
                 mEmulator.mStatusBarBlocks,
-                blockCount,
+                cols,
+                TerminalEmulator.STATUS_BAR_NUM_ROWS,
                 canvas,
                 mEmulator.mColors.mCurrentColors,
                 viewWidth,

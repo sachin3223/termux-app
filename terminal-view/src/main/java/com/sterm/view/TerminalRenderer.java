@@ -279,8 +279,9 @@ public final class TerminalRenderer {
      * Drawn at the top of the canvas, independent of the terminal buffer.
      * Blocks are square (blockSizePx x blockSizePx) and centered horizontally.
      *
-     * @param blocks      Array of ARGB colors for each block, or null if bar is clear.
-     * @param blockCount  Total number of blocks across the width.
+     * @param blocks      Array of ARGB colors for each block (row-major), or null if bar is clear.
+     * @param cols        Number of block columns across width.
+     * @param rows        Number of block rows vertically (e.g. 10).
      * @param canvas      Canvas to draw on.
      * @param palette     Terminal palette for background color fallback.
      * @param viewWidth   Width of the view.
@@ -288,7 +289,7 @@ public final class TerminalRenderer {
      * @param padLeft     Left padding in pixels to center the blocks.
      * @param blockSizePx Pixel width and height of each square block.
      */
-    public void renderBlockBar(int[] blocks, int blockCount, Canvas canvas, int[] palette,
+    public void renderBlockBar(int[] blocks, int cols, int rows, Canvas canvas, int[] palette,
                                int viewWidth, int barHeightPx, int padLeft, int blockSizePx) {
         if (barHeightPx <= 0 || viewWidth <= 0) return;
 
@@ -301,17 +302,22 @@ public final class TerminalRenderer {
         mTextPaint.setColor(bgColor);
         canvas.drawRect(0, 0, viewWidth, barHeightPx, mTextPaint);
 
-        if (blocks == null || blockCount <= 0 || blockSizePx <= 0) return;
+        if (blocks == null || cols <= 0 || rows <= 0 || blockSizePx <= 0) return;
 
-        int limit = Math.min(blockCount, blocks.length);
-        for (int i = 0; i < limit; i++) {
-            int color = blocks[i];
-            mTextPaint.setColor(color);
-            float left = padLeft + i * blockSizePx;
-            float top = 0;
-            float right = left + blockSizePx;
+        for (int r = 0; r < rows; r++) {
+            float top = r * blockSizePx;
             float bottom = top + blockSizePx;
-            canvas.drawRect(left, top, right, bottom, mTextPaint);
+            int rowOffset = r * cols;
+
+            for (int c = 0; c < cols; c++) {
+                int idx = rowOffset + c;
+                if (idx >= blocks.length) break;
+                int color = blocks[idx];
+                mTextPaint.setColor(color);
+                float left = padLeft + c * blockSizePx;
+                float right = left + blockSizePx;
+                canvas.drawRect(left, top, right, bottom, mTextPaint);
+            }
         }
     }
 }

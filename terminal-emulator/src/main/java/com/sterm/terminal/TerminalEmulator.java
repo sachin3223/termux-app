@@ -300,22 +300,28 @@ public final class TerminalEmulator {
 
     /**
      * Block size for the OSC 9001 pixel block bar, in dp.
-     * Each block is a square of this size. Adjust to taste; 4dp is the default.
+     * Each block is a square of this size. 4dp default.
      */
     public static final int STATUS_BAR_BLOCK_SIZE_DP = 4;
 
     /**
-     * ARGB colors for each block in the OSC 9001 block bar.
-     * null = bar not active. Length may differ from {@link #mStatusBarBlockCount}
-     * if the screen was resized after the last set; renderer uses min(length, count).
+     * Number of vertical block rows for the OSC 9001 pixel block bar.
+     */
+    public static final int STATUS_BAR_NUM_ROWS = 10;
+
+    /**
+     * ARGB colors for each block in the OSC 9001 2D block grid.
+     * null = bar not active (cleared).
+     * Size is mStatusBarCols * STATUS_BAR_NUM_ROWS.
+     * Index formula: r * mStatusBarCols + c.
      */
     public int[] mStatusBarBlocks = null;
 
     /**
-     * Number of blocks that fit across the screen width.
+     * Number of block columns that fit across the screen width.
      * Set by {@code TerminalView} after layout. Used for query responses (OSC 9001;4).
      */
-    public int mStatusBarBlockCount = 0;
+    public int mStatusBarCols = 0;
 
     /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
@@ -3020,16 +3026,16 @@ public final class TerminalEmulator {
                 // Free image from memory for any non `MultipartFile=` related commands.
                 mITermImage = null;
             case 9001: {
-                // STermux OSC 9001 pixel block bar protocol.
+                // STermux OSC 9001 2D pixel block bar protocol.
                 //
                 // Format:  OSC 9001 ; <subcmd> [ ; <args> ] BEL
                 //
-                //   (empty)          → clear/reset bar
-                //   0 ; <n>          → get block n color  → \e]9001;0;<n>;<RRGGBB>\a
-                //   1 ; <n> ; <RRGGBB> → set block n color
-                //   2 ; <C>,<C>,…   → set all blocks  (6-char hex RRGGBB each)
-                //   3               → get all colors   → \e]9001;3;<C>,<C>,…\a
-                //   4               → get block count  → \e]9001;4;<count>\a
+                //   (empty)               → clear/reset bar
+                //   0 ; <c> ; <r>         → get block color  → \e]9001;0;<c>;<r>;<RRGGBB>\a
+                //   1 ; <c> ; <r> ; <HEX> → set block color
+                //   2 ; <C>,<C>,…        → set all blocks row-major (r0c0, r0c1, ...)
+                //   3                    → get all colors row-major → \e]9001;3;<C>,<C>,…\a
+                //   4                    → get grid size    → \e]9001;4;<cols>;<rows>\a
 
                 if (textParameter.isEmpty()) {
                     // clear bar
@@ -3047,41 +3053,53 @@ public final class TerminalEmulator {
                 catch (NumberFormatException e) { break; }
 
                 switch (subcmd) {
-                    case 0: { // get block n color
-                        if (mStatusBarBlocks == null || rest1.isEmpty()) break;
-                        try {
-                            int n = Integer.parseInt(rest1.trim());
-                            if (n >= 0 && n < mStatusBarBlocks.length) {
-                                int c = mStatusBarBlocks[n];
-                                mSession.write(String.format(Locale.ENGLISH,
-                                    "\033]9001;0;%d;%06X\007", n, c & 0xFFFFFF));
-                            }
-                        } catch (NumberFormatException e) { /* ignore */ }
+                    case 0: { // get block color: 0;<c>;<r>
+                        if (mStatusBarBlocks == null || rest1.isEmpty() || mStatusBarCols <= 0) break;
+                        String[] parts = rest1.split(";");
+                        if (parts.length >= 2) {
+                            try {
+                                int c = Integer.parseInt(parts[0].trim());
+                                int r = Integer.parseInt(parts[1].trim());
+                                if (c >= 0 && c < mStatusBarCols && r >= 0 && r < STATUS_BAR_NUM_ROWS) {
+                                    int idx = r * mStatusBarCols + c;
+                                    if (idx < mStatusBarBlocks.length) {
+                                        int color = mStatusBarBlocks[idx];
+                                        mSession.write(String.format(Locale.ENGLISH,
+                                            "\033]9001;0;%d;%d;%06X\007", c, r, color & 0xFFFFFF));
+                                    }
+                                }
+                            } catch (NumberFormatException e) { /* ignore */ }
+                        }
                         break;
                     }
-                    case 1: { // set block n color: 1;<n>;<RRGGBB>
-                        int semi2 = rest1.indexOf(';');
-                        if (semi2 < 0) break;
-                        String nStr    = rest1.substring(0, semi2).trim();
-                        String colorStr = rest1.substring(semi2 + 1).trim();
-                        try {
-                            int n = Integer.parseInt(nStr);
-                            int color = (int)(0xFF000000L | Long.parseLong(colorStr, 16));
-                            // Auto-initialize block array if needed.
-                            if (mStatusBarBlocks == null && mStatusBarBlockCount > 0) {
-                                mStatusBarBlocks = new int[mStatusBarBlockCount];
-                            }
-                            if (mStatusBarBlocks != null && n >= 0 && n < mStatusBarBlocks.length) {
-                                mStatusBarBlocks[n] = color;
-                            }
-                        } catch (NumberFormatException e) { /* ignore */ }
+                    case 1: { // set block color: 1;<c>;<r>;<RRGGBB>
+                        String[] parts = rest1.split(";");
+                        if (parts.length >= 3) {
+                            try {
+                                int c = Integer.parseInt(parts[0].trim());
+                                int r = Integer.parseInt(parts[1].trim());
+                                int color = (int)(0xFF000000L | Long.parseLong(parts[2].trim(), 16));
+                                int total = mStatusBarCols * STATUS_BAR_NUM_ROWS;
+                                if (mStatusBarBlocks == null && total > 0) {
+                                    mStatusBarBlocks = new int[total];
+                                }
+                                if (mStatusBarBlocks != null && c >= 0 && c < mStatusBarCols && r >= 0 && r < STATUS_BAR_NUM_ROWS) {
+                                    int idx = r * mStatusBarCols + c;
+                                    if (idx < mStatusBarBlocks.length) {
+                                        mStatusBarBlocks[idx] = color;
+                                    }
+                                }
+                            } catch (NumberFormatException e) { /* ignore */ }
+                        }
                         break;
                     }
                     case 2: { // set all blocks: 2;<RRGGBB>,<RRGGBB>,...
                         if (rest1.isEmpty()) break;
                         String[] parts = rest1.split(",");
-                        int[] blocks = new int[parts.length];
-                        for (int bi = 0; bi < parts.length; bi++) {
+                        int total = mStatusBarCols * STATUS_BAR_NUM_ROWS;
+                        int[] blocks = new int[total > 0 ? total : parts.length];
+                        int limit = Math.min(parts.length, blocks.length);
+                        for (int bi = 0; bi < limit; bi++) {
                             try {
                                 blocks[bi] = (int)(0xFF000000L | Long.parseLong(parts[bi].trim(), 16));
                             } catch (NumberFormatException e) {
@@ -3091,7 +3109,7 @@ public final class TerminalEmulator {
                         mStatusBarBlocks = blocks;
                         break;
                     }
-                    case 3: { // get all colors
+                    case 3: { // get all colors: 3
                         if (mStatusBarBlocks == null) {
                             mSession.write("\033]9001;3;\007");
                             break;
@@ -3106,9 +3124,9 @@ public final class TerminalEmulator {
                             "\033]9001;3;%s\007", sb));
                         break;
                     }
-                    case 4: { // get block count
+                    case 4: { // get grid size: 4 -> \e]9001;4;<cols>;<rows>\a
                         mSession.write(String.format(Locale.ENGLISH,
-                            "\033]9001;4;%d\007", mStatusBarBlockCount));
+                            "\033]9001;4;%d;%d\007", mStatusBarCols, STATUS_BAR_NUM_ROWS));
                         break;
                     }
                     default: break;
