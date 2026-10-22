@@ -300,9 +300,13 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
 
 
+    public synchronized boolean isWakeLockHeld() {
+        return mWakeLock != null;
+    }
+
     /** Process action to acquire Power and Wi-Fi WakeLocks. */
     @SuppressLint({"WakelockTimeout", "BatteryLife"})
-    private void actionAcquireWakeLock() {
+    public synchronized void actionAcquireWakeLock() {
         if (mWakeLock != null) {
             Logger.logDebug(LOG_TAG, "Ignoring acquiring WakeLocks since they are already held");
             return;
@@ -330,7 +334,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     }
 
     /** Process action to release Power and Wi-Fi WakeLocks. */
-    private void actionReleaseWakeLock(boolean updateNotification) {
+    public synchronized void actionReleaseWakeLock(boolean updateNotification) {
         if (mWakeLock == null && mWifiLock == null) {
             Logger.logDebug(LOG_TAG, "Ignoring releasing WakeLocks since none are already held");
             return;

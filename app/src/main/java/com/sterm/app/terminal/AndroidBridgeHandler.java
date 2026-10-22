@@ -14,7 +14,7 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
+
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -25,7 +25,9 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 
 import com.sterm.app.TermuxActivity;
+import com.sterm.app.TermuxService;
 import com.sterm.shared.logger.Logger;
+import com.sterm.shared.termux.TermuxConstants;
 import com.sterm.terminal.TerminalOutput;
 
 import java.util.Locale;
@@ -38,7 +40,6 @@ public final class AndroidBridgeHandler {
 
     private static final String LOG_TAG = "AndroidBridgeHandler";
 
-    private static PowerManager.WakeLock sWakeLock = null;
     private static TextToSpeech sTts = null;
 
     private AndroidBridgeHandler() {}
@@ -80,7 +81,7 @@ public final class AndroidBridgeHandler {
                     handleVolume(context, session, rest);
                     break;
                 case "WAKELOCK":
-                    handleWakeLock(context, rest);
+                    handleWakeLock(context, session, rest);
                     break;
                 case "TTS":
                     handleTts(context, rest);
@@ -311,24 +312,26 @@ public final class AndroidBridgeHandler {
         }
     }
 
-    private static void handleWakeLock(Context context, String arg) {
+    private static void handleWakeLock(Context context, TerminalOutput session, String arg) {
         boolean enable = "1".equals(arg) || "ON".equalsIgnoreCase(arg);
         try {
-            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            if (pm == null) return;
-
-            if (enable) {
-                if (sWakeLock == null) {
-                    sWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "sterm:bridge_wakelock");
-                }
-                if (!sWakeLock.isHeld()) {
-                    sWakeLock.acquire(60 * 60 * 1000L); // 1 hour safety timeout
-                }
-            } else {
-                if (sWakeLock != null && sWakeLock.isHeld()) {
-                    sWakeLock.release();
-                }
+            TermuxService service = null;
+            if (context instanceof TermuxActivity) {
+                service = ((TermuxActivity) context).getTermuxService();
+            } else if (context instanceof TermuxService) {
+                service = (TermuxService) context;
             }
+            if (service == null) {
+                Logger.logError(LOG_TAG, "WakeLock: TermuxService not available");
+                return;
+            }
+            if (enable) {
+                service.actionAcquireWakeLock();
+            } else {
+                service.actionReleaseWakeLock(true);
+            }
+            session.write(String.format(Locale.ENGLISH,
+                "\033]9002;WAKELOCK;%s\007", service.isWakeLockHeld() ? "1" : "0"));
         } catch (Throwable t) {
             Logger.logError(LOG_TAG, "WakeLock error: " + t.getMessage());
         }
