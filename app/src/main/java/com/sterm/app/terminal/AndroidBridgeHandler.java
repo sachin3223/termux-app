@@ -46,7 +46,7 @@ public final class AndroidBridgeHandler {
 
     public static void handleCommand(@NonNull Context context, @NonNull TerminalOutput session, String textParameter) {
         if (textParameter == null || textParameter.trim().isEmpty() || "HELP".equalsIgnoreCase(textParameter.trim())) {
-            session.write("\033]9002;HELP;TOAST,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK\007");
+            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK\007");
             return;
         }
 
@@ -56,6 +56,9 @@ public final class AndroidBridgeHandler {
 
         try {
             switch (subcmd) {
+                case "SNACKBAR":
+                    handleSnackbar(context, rest);
+                    break;
                 case "TOAST":
                     handleToast(context, rest);
                     break;
@@ -102,6 +105,51 @@ public final class AndroidBridgeHandler {
                 Toast.makeText(context.getApplicationContext(), text, Toast.LENGTH_SHORT).show();
             } catch (Throwable t) {
                 Logger.logError(LOG_TAG, "Toast error: " + t.getMessage());
+            }
+        });
+    }
+
+    // Protocol: SNACKBAR;<message>[;<action>[;<duration_ms>]]
+    // If Activity not available, falls back to Toast.
+    private static void handleSnackbar(Context context, String args) {
+        if (args.isEmpty()) return;
+
+        // Parse: message;action;duration
+        String[] parts = args.split(";", 3);
+        String message  = parts[0].trim();
+        String action   = parts.length > 1 ? parts[1].trim() : "";
+        int duration    = com.google.android.material.snackbar.Snackbar.LENGTH_SHORT;
+        if (parts.length > 2) {
+            try {
+                duration = Integer.parseInt(parts[2].trim());
+            } catch (NumberFormatException ignored) {}
+        }
+
+        if (message.isEmpty()) return;
+
+        final String finalMessage = message;
+        final String finalAction  = action;
+        final int    finalDuration = duration;
+
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                android.view.View rootView = null;
+                if (context instanceof TermuxActivity) {
+                    rootView = ((TermuxActivity) context).getWindow().getDecorView();
+                }
+                if (rootView == null) {
+                    // Fallback to Toast if no Activity view available
+                    Toast.makeText(context.getApplicationContext(), finalMessage, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                com.google.android.material.snackbar.Snackbar snackbar =
+                    com.google.android.material.snackbar.Snackbar.make(rootView, finalMessage, finalDuration);
+                if (!finalAction.isEmpty()) {
+                    snackbar.setAction(finalAction, v -> {});
+                }
+                snackbar.show();
+            } catch (Throwable t) {
+                Logger.logError(LOG_TAG, "Snackbar error: " + t.getMessage());
             }
         });
     }
