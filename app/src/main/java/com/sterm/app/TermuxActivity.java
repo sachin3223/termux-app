@@ -54,6 +54,7 @@ import com.sterm.shared.termux.settings.properties.TermuxAppSharedProperties;
 import com.sterm.shared.termux.theme.TermuxThemeUtils;
 import com.sterm.shared.theme.NightMode;
 import com.sterm.shared.view.ViewUtils;
+import com.sterm.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.sterm.terminal.TerminalSession;
 import com.sterm.terminal.TerminalSessionClient;
 import com.sterm.view.TerminalView;
@@ -302,6 +303,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleDeepLinkIntent(intent);
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
 
@@ -429,6 +437,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
         mTermuxService.setTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
+
+        handleDeepLinkIntent(intent);
     }
 
     @Override
@@ -437,6 +447,84 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Respect being stopped from the {@link TermuxService} notification action.
         finishActivityIfNotFinishing();
+    }
+
+    /**
+     * Handle deep links with scheme "sterm://".
+     * Supports:
+     * - sterm://open (bring to front, preserve or create session)
+     * - sterm://open?sess=2 (switch to session 2)
+     * - sterm://type?cmd=git%20status (safely type into current session without Enter)
+     * - sterm://type?cmd=htop&sess=1 (switch to session 1 and type htop)
+     */
+    public void handleDeepLinkIntent(Intent intent) {
+        if (intent == null) return;
+        Uri uri = intent.getData();
+        if (uri == null || !"sterm".equalsIgnoreCase(uri.getScheme())) return;
+
+        Logger.logDebug(LOG_TAG, "handleDeepLinkIntent: " + uri);
+
+        String sessParam = uri.getQueryParameter("sess");
+        if (sessParam == null) sessParam = uri.getQueryParameter("session");
+
+        String cmd = uri.getQueryParameter("cmd");
+        if (cmd == null) cmd = uri.getQueryParameter("c");
+        if (cmd == null) cmd = uri.getQueryParameter("text");
+        if (cmd == null) cmd = uri.getQueryParameter("input");
+
+        final String finalSess = sessParam;
+        // Strictly single-line: replace newlines and carriage returns to prevent auto-execution
+        final String finalCmd = (cmd != null) ? cmd.replace("\r", " ").replace("\n", " ") : null;
+
+        mTerminalView.postDelayed(new Runnable() {
+            int retries = 0;
+
+            @Override
+            public void run() {
+                if (mTermuxService == null || mTermuxTerminalSessionActivityClient == null) {
+                    if (retries < 6) {
+                        retries++;
+                        mTerminalView.postDelayed(this, 300);
+                    }
+                    return;
+                }
+
+                TerminalSession current = getCurrentSession();
+                if (current == null && retries < 6) {
+                    retries++;
+                    mTerminalView.postDelayed(this, 300);
+                    return;
+                }
+
+                // Handle session targeting if sess parameter was passed
+                if (finalSess != null && !finalSess.isEmpty()) {
+                    try {
+                        int sessNum = Integer.parseInt(finalSess.trim());
+                        int total = mTermuxService.getTermuxSessionsSize();
+                        // Support 1-based (UI index e.g. [1], [2]) and 0-based index
+                        int targetIndex = (sessNum >= 1 && sessNum <= total) ? (sessNum - 1) : sessNum;
+                        if (targetIndex >= 0 && targetIndex < total) {
+                            mTermuxTerminalSessionActivityClient.switchToSession(targetIndex);
+                        }
+                    } catch (NumberFormatException e) {
+                        TermuxSession ts = mTermuxService.getTermuxSessionForShellName(finalSess.trim());
+                        if (ts != null) {
+                            mTermuxTerminalSessionActivityClient.setCurrentSession(ts.getTerminalSession());
+                        }
+                    }
+                }
+
+                // Type command into the front/target session
+                if (finalCmd != null && !finalCmd.isEmpty()) {
+                    TerminalSession targetSession = getCurrentSession();
+                    if (targetSession != null && targetSession.isRunning()) {
+                        targetSession.write(finalCmd);
+                    }
+                }
+
+                mTerminalView.requestFocus();
+            }
+        }, 150);
     }
 
 
