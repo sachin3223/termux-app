@@ -57,7 +57,7 @@ public final class AndroidBridgeHandler {
         try {
             switch (subcmd) {
                 case "SNACKBAR":
-                    handleSnackbar(context, rest);
+                    handleSnackbar(context, session, rest);
                     break;
                 case "TOAST":
                     handleToast(context, rest);
@@ -111,7 +111,7 @@ public final class AndroidBridgeHandler {
 
     // Protocol: SNACKBAR;<message>[;<action>[;<duration_ms>]]
     // If Activity not available, falls back to Toast.
-    private static void handleSnackbar(Context context, String args) {
+    private static void handleSnackbar(Context context, TerminalOutput session, String args) {
         if (args.isEmpty()) return;
 
         // Parse: message;action;duration
@@ -144,9 +144,19 @@ public final class AndroidBridgeHandler {
                 }
                 com.google.android.material.snackbar.Snackbar snackbar =
                     com.google.android.material.snackbar.Snackbar.make(rootView, finalMessage, finalDuration);
+                // Track if action button was pressed
+                final boolean[] actionPressed = {false};
                 if (!finalAction.isEmpty()) {
-                    snackbar.setAction(finalAction, v -> {});
+                    snackbar.setAction(finalAction, v -> actionPressed[0] = true);
                 }
+                // Respond to terminal when done (script can read result)
+                snackbar.addCallback(new com.google.android.material.snackbar.Snackbar.Callback() {
+                    @Override
+                    public void onDismissed(com.google.android.material.snackbar.Snackbar sb, int event) {
+                        String result = actionPressed[0] ? "ACTION" : "DISMISS";
+                        session.write("\033]9002;SNACKBAR;" + result + "\007");
+                    }
+                });
                 // Push Snackbar above keyboard if open
                 android.view.View snackbarView = snackbar.getView();
                 androidx.core.view.WindowInsetsCompat insets =
