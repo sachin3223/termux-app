@@ -135,7 +135,7 @@ public final class AndroidBridgeHandler {
             try {
                 android.view.View rootView = null;
                 if (context instanceof TermuxActivity) {
-                    rootView = ((TermuxActivity) context).getWindow().getDecorView();
+                    rootView = ((TermuxActivity) context).findViewById(android.R.id.content);
                 }
                 if (rootView == null) {
                     // Fallback to Toast if no Activity view available
