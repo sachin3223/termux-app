@@ -378,8 +378,9 @@ public final class AndroidBridgeHandler {
             } else {
                 service.actionReleaseWakeLock(true);
             }
+            final TermuxService finalService = service;
             new Handler(Looper.getMainLooper()).post(() ->
-                Toast.makeText(context, "WakeLock " + (service.isWakeLockHeld() ? "ON" : "OFF"), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "WakeLock " + (finalService.isWakeLockHeld() ? "ON" : "OFF"), Toast.LENGTH_SHORT).show()
             );
         } catch (Throwable t) {
             Logger.logError(LOG_TAG, "WakeLock error: " + t.getMessage());
