@@ -159,6 +159,20 @@ public final class AndroidBridgeHandler {
                     params.bottomMargin = imeHeight;
                     snackbarView.setLayoutParams(params);
                 }
+                // Swipe left/right to dismiss (like Chrome)
+                android.view.GestureDetector gd = new android.view.GestureDetector(context,
+                    new android.view.GestureDetector.SimpleOnGestureListener() {
+                        @Override
+                        public boolean onFling(android.view.MotionEvent e1, android.view.MotionEvent e2,
+                                               float vX, float vY) {
+                            if (Math.abs(vX) > Math.abs(vY) * 1.5f) {
+                                snackbar.dismiss();
+                                return true;
+                            }
+                            return false;
+                        }
+                    });
+                snackbarView.setOnTouchListener((v, event) -> gd.onTouchEvent(event));
                 snackbar.show();
             } catch (Throwable t) {
                 Logger.logError(LOG_TAG, "Snackbar error: " + t.getMessage());
