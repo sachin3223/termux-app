@@ -147,6 +147,18 @@ public final class AndroidBridgeHandler {
                 if (!finalAction.isEmpty()) {
                     snackbar.setAction(finalAction, v -> {});
                 }
+                // Push Snackbar above keyboard if open
+                android.view.View snackbarView = snackbar.getView();
+                androidx.core.view.WindowInsetsCompat insets =
+                    androidx.core.view.ViewCompat.getRootWindowInsets(rootView);
+                if (insets != null) {
+                    int imeHeight = insets.getInsets(
+                        androidx.core.view.WindowInsetsCompat.Type.ime()).bottom;
+                    android.view.ViewGroup.MarginLayoutParams params =
+                        (android.view.ViewGroup.MarginLayoutParams) snackbarView.getLayoutParams();
+                    params.bottomMargin = imeHeight;
+                    snackbarView.setLayoutParams(params);
+                }
                 snackbar.show();
             } catch (Throwable t) {
                 Logger.logError(LOG_TAG, "Snackbar error: " + t.getMessage());
