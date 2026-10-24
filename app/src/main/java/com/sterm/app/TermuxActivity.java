@@ -455,11 +455,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     /**
      * Handle deep links with scheme "sterm:" or "sterm://".
      * Supports:
-     * - sterm:open or sterm://open (bring to front, preserve or create session)
-     * - sterm:open?sess=2 or sterm://open?sess=2 (switch to session 2)
-     * - sterm:type?cmd=git%20status or sterm://type?cmd=git%20status (safely type into current session without Enter)
-     * - sterm:htop or sterm:git status (direct command shorthand)
-     * - sterm:htop?sess=1 (direct command with target session)
+     * - sterm: or sterm:// (bring to front, preserve or create session)
+     * - sterm:?sess=2 (switch to session 2)
+     * - sterm:htop or sterm:git status (directly types into session without Enter)
+     * - sterm:htop?sess=1 (switch to session 1 and type htop)
+     * - sterm:?cmd=git%20status (explicit query param)
      */
     public void handleDeepLinkIntent(Intent intent) {
         if (intent == null) return;
@@ -512,11 +512,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             if (cmd == null) cmd = uri.getQueryParameter("input");
         }
 
-        // Direct command shorthand: if no cmd query param given, and pathPart is not "open", "type", "run"
-        if (cmd == null && !pathPart.isEmpty()
-                && !"open".equalsIgnoreCase(pathPart)
-                && !"type".equalsIgnoreCase(pathPart)
-                && !"run".equalsIgnoreCase(pathPart)) {
+        // If no explicit cmd param was given, whatever is in pathPart is the command to type
+        if (cmd == null && !pathPart.isEmpty()) {
             cmd = pathPart;
         }
 
