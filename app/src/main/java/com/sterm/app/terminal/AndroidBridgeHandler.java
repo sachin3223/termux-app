@@ -609,29 +609,66 @@ public final class AndroidBridgeHandler {
                     }
                 }
 
-                Uri contentUri = UriUtils.getContentUri(TermuxConstants.TERMUX_FILE_SHARE_URI_AUTHORITY, file.getAbsolutePath());
+                // If file is in internal storage, cache to external cache directory so SELinux doesn't block PackageInstaller
+                File apkToInstall = file;
+                if (!file.getAbsolutePath().startsWith("/sdcard/") && !file.getAbsolutePath().startsWith("/storage/")) {
+                    File extCache = context.getExternalCacheDir();
+                    if (extCache != null) {
+                        File cachedApk = new File(extCache, "install_temp.apk");
+                        try (java.io.InputStream in = new java.io.FileInputStream(file);
+                             java.io.OutputStream out = new java.io.FileOutputStream(cachedApk)) {
+                            byte[] buf = new byte[65536];
+                            int len;
+                            while ((len = in.read(buf)) > 0) {
+                                out.write(buf, 0, len);
+                            }
+                            apkToInstall = cachedApk;
+                        } catch (Throwable t) {
+                            Logger.logWarn(LOG_TAG, "Failed to cache APK to external cache: " + t.getMessage());
+                        }
+                    }
+                }
+
+                Uri contentUri = UriUtils.getContentUri(TermuxConstants.TERMUX_FILE_SHARE_URI_AUTHORITY, apkToInstall.getAbsolutePath());
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-                // Directly target genuine system Package Installer (bypassing Termux/STermux chooser)
+                // Directly target genuine system Package Installer (Manufacturer/OEM first, Google as last resort)
                 PackageManager pm = context.getPackageManager();
                 List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, 0);
                 String targetPkg = null;
+                String fallbackPkg = null;
+                String manufacturer = Build.MANUFACTURER.toLowerCase(Locale.ENGLISH);
+
                 for (ResolveInfo ri : resolveInfos) {
                     if (ri.activityInfo != null && ri.activityInfo.packageName != null) {
                         String pkg = ri.activityInfo.packageName.toLowerCase(Locale.ENGLISH);
-                        if (pkg.contains("termux") || pkg.contains("sterm")) {
+                        if (pkg.contains("termux") || pkg.contains("sterm") || pkg.contains("editor")) {
                             continue;
                         }
-                        if (pkg.equals("com.google.android.packageinstaller")) {
+                        // 1. TOP PRIORITY: Manufacturer/Brand specific installer (vivo, bbk, samsung, miui, oppo, etc.)
+                        if (pkg.contains(manufacturer) || pkg.contains("vivo") || pkg.contains("bbk") ||
+                            pkg.contains("samsung") || pkg.contains("miui") || pkg.contains("coloros")) {
                             targetPkg = ri.activityInfo.packageName;
                             break;
                         }
-                        if (pkg.contains("packageinstaller") || (pkg.contains("installer") && !pkg.contains("editor"))) {
-                            targetPkg = ri.activityInfo.packageName;
+                        // 2. AOSP generic package installer
+                        if (pkg.equals("com.android.packageinstaller")) {
+                            fallbackPkg = ri.activityInfo.packageName;
+                        }
+                        // 3. Other OEM installer
+                        else if (fallbackPkg == null && pkg.contains("packageinstaller") && !pkg.contains("google")) {
+                            fallbackPkg = ri.activityInfo.packageName;
+                        }
+                        // 4. Last resort: Google package installer
+                        else if (fallbackPkg == null && pkg.contains("packageinstaller")) {
+                            fallbackPkg = ri.activityInfo.packageName;
                         }
                     }
+                }
+                if (targetPkg == null) {
+                    targetPkg = fallbackPkg;
                 }
                 if (targetPkg != null) {
                     intent.setPackage(targetPkg);

@@ -212,10 +212,13 @@ public class TermuxOpenReceiver extends BroadcastReceiver {
                     throw new IllegalArgumentException("Invalid path: " + path);
                 }
 
-                // If TermuxConstants.PROP_ALLOW_EXTERNAL_APPS property to not set to "true", then throw exception
-                String errmsg = TermuxPluginUtils.checkIfAllowExternalAppsPolicyIsViolated(getContext(), LOG_TAG);
-                if (errmsg != null) {
-                    throw new IllegalArgumentException(errmsg);
+                // Allow reading APK files for installation without requiring allow-external-apps=true
+                if (!path.endsWith(".apk") || !"r".equals(mode)) {
+                    // If TermuxConstants.PROP_ALLOW_EXTERNAL_APPS property to not set to "true", then throw exception
+                    String errmsg = TermuxPluginUtils.checkIfAllowExternalAppsPolicyIsViolated(getContext(), LOG_TAG);
+                    if (errmsg != null) {
+                        throw new IllegalArgumentException(errmsg);
+                    }
                 }
 
                 // **DO NOT** allow these files to be modified by ContentProvider exposed to external
