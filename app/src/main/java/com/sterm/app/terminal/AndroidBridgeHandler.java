@@ -1,17 +1,21 @@
 package com.sterm.app.terminal;
 
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -41,12 +45,13 @@ public final class AndroidBridgeHandler {
     private static final String LOG_TAG = "AndroidBridgeHandler";
 
     private static TextToSpeech sTts = null;
+    private static CancellationSignal sAuthCancellationSignal = null;
 
     private AndroidBridgeHandler() {}
 
     public static void handleCommand(@NonNull Context context, @NonNull TerminalOutput session, String textParameter) {
         if (textParameter == null || textParameter.trim().isEmpty() || "HELP".equalsIgnoreCase(textParameter.trim())) {
-            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK\007");
+            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK,AUTH\007");
             return;
         }
 
@@ -56,6 +61,9 @@ public final class AndroidBridgeHandler {
 
         try {
             switch (subcmd) {
+                case "AUTH":
+                    handleAuth(context, session, rest);
+                    break;
                 case "SNACKBAR":
                     handleSnackbar(context, session, rest);
                     break;
@@ -443,5 +451,116 @@ public final class AndroidBridgeHandler {
                 Logger.logError(LOG_TAG, "TTS error: " + t.getMessage());
             }
         });
+    }
+
+    // Protocol: AUTH[;<title>[;<subtitle>]]
+    // Responds: \033]9002;AUTH;SUCCESS\007
+    //           \033]9002;AUTH;CANCELLED\007
+    //           \033]9002;AUTH;FAILED;<reason>\007
+    private static void handleAuth(Context context, TerminalOutput session, String args) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                TermuxActivity activity = null;
+                if (context instanceof TermuxActivity) {
+                    activity = (TermuxActivity) context;
+                } else if (context instanceof TermuxService) {
+                    activity = ((TermuxService) context).getActivity();
+                }
+
+                if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                    session.write("\033]9002;AUTH;FAILED;Activity not in foreground\007");
+                    return;
+                }
+
+                KeyguardManager km = (KeyguardManager) activity.getSystemService(Context.KEYGUARD_SERVICE);
+                if (km == null || !km.isDeviceSecure()) {
+                    session.write("\033]9002;AUTH;FAILED;Device lock screen is not set\007");
+                    return;
+                }
+
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+                    session.write("\033]9002;AUTH;FAILED;Biometrics require Android 9+\007");
+                    return;
+                }
+
+                String title = "Authenticate";
+                String subtitle = "Confirm your identity to proceed";
+                if (!args.isEmpty()) {
+                    String[] parts = args.split(";", 2);
+                    if (!parts[0].trim().isEmpty()) {
+                        title = parts[0].trim();
+                    }
+                    if (parts.length > 1 && !parts[1].trim().isEmpty()) {
+                        subtitle = parts[1].trim();
+                    }
+                }
+
+                if (sAuthCancellationSignal != null) {
+                    try {
+                        sAuthCancellationSignal.cancel();
+                    } catch (Throwable ignored) {}
+                    sAuthCancellationSignal = null;
+                }
+
+                sAuthCancellationSignal = new CancellationSignal();
+                final CancellationSignal currentSignal = sAuthCancellationSignal;
+
+                BiometricPrompt.Builder builder = new BiometricPrompt.Builder(activity)
+                    .setTitle(title)
+                    .setDescription(subtitle);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    AuthHelperApi30.setAuthenticators(builder);
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    builder.setDeviceCredentialAllowed(true);
+                } else {
+                    builder.setNegativeButton("Cancel", activity.getMainExecutor(), (dialog, which) -> {
+                        session.write("\033]9002;AUTH;CANCELLED\007");
+                    });
+                }
+
+                BiometricPrompt prompt = builder.build();
+                prompt.authenticate(currentSignal, activity.getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                    @Override
+                    public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                        super.onAuthenticationSucceeded(result);
+                        sAuthCancellationSignal = null;
+                        session.write("\033]9002;AUTH;SUCCESS\007");
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode, CharSequence errString) {
+                        super.onAuthenticationError(errorCode, errString);
+                        sAuthCancellationSignal = null;
+                        if (errorCode == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED ||
+                            errorCode == BiometricPrompt.BIOMETRIC_ERROR_CANCELED ||
+                            errorCode == 13 /* BIOMETRIC_ERROR_NEGATIVE_BUTTON */) {
+                            session.write("\033]9002;AUTH;CANCELLED\007");
+                        } else {
+                            String msg = (errString != null) ? errString.toString() : ("Error " + errorCode);
+                            session.write("\033]9002;AUTH;FAILED;" + msg + "\007");
+                        }
+                    }
+
+                    @Override
+                    public void onAuthenticationFailed() {
+                        super.onAuthenticationFailed();
+                    }
+                });
+
+            } catch (Throwable t) {
+                Logger.logError(LOG_TAG, "Auth error: " + t.getMessage());
+                session.write("\033]9002;AUTH;FAILED;" + t.getMessage() + "\007");
+            }
+        });
+    }
+
+    private static class AuthHelperApi30 {
+        static void setAuthenticators(BiometricPrompt.Builder builder) {
+            builder.setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG |
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            );
+        }
     }
 }

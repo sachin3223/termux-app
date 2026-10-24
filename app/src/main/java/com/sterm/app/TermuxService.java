@@ -753,6 +753,13 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             return mTermuxTerminalSessionServiceClient;
     }
 
+    public synchronized TermuxActivity getActivity() {
+        if (mTermuxTerminalSessionActivityClient != null)
+            return mTermuxTerminalSessionActivityClient.getActivity();
+        else
+            return null;
+    }
+
     /** This should be called when {@link TermuxActivity#onServiceConnected} is called to set the
      * {@link TermuxService#mTermuxTerminalSessionActivityClient} variable and update the {@link TerminalSession}
      * and {@link TerminalEmulator} clients in case they were passed {@link TermuxTerminalSessionServiceClient}

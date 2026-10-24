@@ -55,6 +55,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         this.mActivity = activity;
     }
 
+    public TermuxActivity getActivity() {
+        return mActivity;
+    }
+
     /**
      * Should be called when mActivity.onCreate() is called
      */
