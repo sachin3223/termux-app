@@ -2770,6 +2770,7 @@ public final class TerminalEmulator {
                     terminalControlArgsMaxLength = TerminalBitmap.MAX_BITMAP_SIZE +
                         /* `1337;File=inline=1;size=209715200;name=xxxxxxxxxxxxxxxxxxxxxxxx;width=8192px;height=8192px;preserveAspectRatio=1:` */ 150;
                     break;
+                case 9000:
                 case 9002:
                     mIsFastPathOsc = true;
                     mIgnoreCrLfForOsc = true;
@@ -3051,6 +3052,13 @@ public final class TerminalEmulator {
 
                 // Free image from memory for any non `MultipartFile=` related commands.
                 mITermImage = null;
+                break;
+            case 9000: {
+                // STermux handshake / capability probe: responds "\e]9000;OK\a"
+                // Allows scripts to identify STermux vs standard Termux.
+                mSession.write("\033]9000;OK\007");
+                break;
+            }
             case 9001: {
                 // STermux OSC 9001 2D pixel block bar protocol.
                 //
