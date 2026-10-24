@@ -1034,7 +1034,7 @@ public final class TerminalView extends View {
         int blockSizePx = getStatusBarBlockSizePx();
         int cols = (blockSizePx > 0) ? (viewWidth / blockSizePx) : 0;
         if (mEmulator != null) {
-            mEmulator.mStatusBarCols = cols;
+            mEmulator.setStatusBarCols(cols);
         }
 
         // Set to 80 and 24 if you want to enable vttest.
@@ -1045,7 +1045,7 @@ public final class TerminalView extends View {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             if (mEmulator != null) {
-                mEmulator.mStatusBarCols = cols;
+                mEmulator.setStatusBarCols(cols);
             }
             mClient.onEmulatorSet();
 
@@ -1090,7 +1090,7 @@ public final class TerminalView extends View {
             int padLeft = remainder / 2;
 
             if (mEmulator.mStatusBarCols != cols) {
-                mEmulator.mStatusBarCols = cols;
+                mEmulator.setStatusBarCols(cols);
             }
 
             // Push terminal rendering down so top area is reserved for the block status bar.

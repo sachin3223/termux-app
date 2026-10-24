@@ -324,6 +324,28 @@ public final class TerminalEmulator {
     public int mStatusBarCols = 0;
 
     /**
+     * Update the status bar column count and safely migrate the 2D block buffer.
+     * Preserves existing (c, r) pixels row-by-row without wrapping or corruption.
+     *
+     * @param newCols The new number of columns across screen width.
+     */
+    public synchronized void setStatusBarCols(int newCols) {
+        if (newCols <= 0 || newCols == mStatusBarCols) return;
+
+        int oldCols = mStatusBarCols;
+        mStatusBarCols = newCols;
+
+        if (mStatusBarBlocks != null && oldCols > 0) {
+            int[] newBlocks = new int[newCols * STATUS_BAR_NUM_ROWS];
+            int copyWidth = Math.min(oldCols, newCols);
+            for (int r = 0; r < STATUS_BAR_NUM_ROWS; r++) {
+                System.arraycopy(mStatusBarBlocks, r * oldCols, newBlocks, r * newCols, copyWidth);
+            }
+            mStatusBarBlocks = newBlocks;
+        }
+    }
+
+    /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
      * without additional checks.
      *
