@@ -22,6 +22,7 @@ import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
+import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
@@ -31,9 +32,11 @@ import androidx.annotation.NonNull;
 import com.sterm.app.TermuxActivity;
 import com.sterm.app.TermuxService;
 import com.sterm.shared.logger.Logger;
+import com.sterm.shared.net.uri.UriUtils;
 import com.sterm.shared.termux.TermuxConstants;
 import com.sterm.terminal.TerminalOutput;
 
+import java.io.File;
 import java.util.Locale;
 
 /**
@@ -51,7 +54,7 @@ public final class AndroidBridgeHandler {
 
     public static void handleCommand(@NonNull Context context, @NonNull TerminalOutput session, String textParameter) {
         if (textParameter == null || textParameter.trim().isEmpty() || "HELP".equalsIgnoreCase(textParameter.trim())) {
-            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK,AUTH\007");
+            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK,AUTH,INSTALL\007");
             return;
         }
 
@@ -61,6 +64,9 @@ public final class AndroidBridgeHandler {
 
         try {
             switch (subcmd) {
+                case "INSTALL":
+                    handleInstall(context, session, rest);
+                    break;
                 case "AUTH":
                     handleAuth(context, session, rest);
                     break;
@@ -562,5 +568,54 @@ public final class AndroidBridgeHandler {
                 BiometricManager.Authenticators.DEVICE_CREDENTIAL
             );
         }
+    }
+
+    // Protocol: INSTALL;<apk_path>
+    // Responds: \033]9002;INSTALL;SUCCESS\007
+    //           \033]9002;INSTALL;PERMISSION_REQUIRED;<msg>\007
+    //           \033]9002;INSTALL;FAILED;<reason>\007
+    private static void handleInstall(Context context, TerminalOutput session, String path) {
+        if (path == null || path.trim().isEmpty()) {
+            session.write("\033]9002;INSTALL;FAILED;No APK path provided\007");
+            return;
+        }
+
+        String apkPath = path.trim();
+        if (apkPath.startsWith("~/")) {
+            apkPath = TermuxConstants.TERMUX_HOME_DIR_PATH + apkPath.substring(1);
+        } else if (!apkPath.startsWith("/")) {
+            apkPath = TermuxConstants.TERMUX_HOME_DIR_PATH + "/" + apkPath;
+        }
+
+        File file = new File(apkPath);
+        if (!file.exists() || !file.isFile() || !file.canRead()) {
+            session.write("\033]9002;INSTALL;FAILED;File not found or unreadable: " + apkPath + "\007");
+            return;
+        }
+
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!context.getPackageManager().canRequestPackageInstalls()) {
+                        Intent permIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                        permIntent.setData(Uri.parse("package:" + context.getPackageName()));
+                        permIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(permIntent);
+                        session.write("\033]9002;INSTALL;PERMISSION_REQUIRED;Please grant Install Unknown Apps permission\007");
+                        return;
+                    }
+                }
+
+                Uri contentUri = UriUtils.getContentUri(TermuxConstants.TERMUX_FILE_SHARE_URI_AUTHORITY, file.getAbsolutePath());
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                context.startActivity(intent);
+                session.write("\033]9002;INSTALL;SUCCESS\007");
+            } catch (Throwable t) {
+                Logger.logError(LOG_TAG, "Install error: " + t.getMessage());
+                session.write("\033]9002;INSTALL;FAILED;" + t.getMessage() + "\007");
+            }
+        });
     }
 }
