@@ -7,6 +7,8 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.BiometricPrompt;
 import android.hardware.camera2.CameraCharacteristics;
@@ -37,6 +39,7 @@ import com.sterm.shared.termux.TermuxConstants;
 import com.sterm.terminal.TerminalOutput;
 
 import java.io.File;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -610,6 +613,30 @@ public final class AndroidBridgeHandler {
                 Intent intent = new Intent(Intent.ACTION_VIEW);
                 intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                // Directly target genuine system Package Installer (bypassing Termux/STermux chooser)
+                PackageManager pm = context.getPackageManager();
+                List<ResolveInfo> resolveInfos = pm.queryIntentActivities(intent, 0);
+                String targetPkg = null;
+                for (ResolveInfo ri : resolveInfos) {
+                    if (ri.activityInfo != null && ri.activityInfo.packageName != null) {
+                        String pkg = ri.activityInfo.packageName.toLowerCase(Locale.ENGLISH);
+                        if (pkg.contains("termux") || pkg.contains("sterm")) {
+                            continue;
+                        }
+                        if (pkg.equals("com.google.android.packageinstaller")) {
+                            targetPkg = ri.activityInfo.packageName;
+                            break;
+                        }
+                        if (pkg.contains("packageinstaller") || (pkg.contains("installer") && !pkg.contains("editor"))) {
+                            targetPkg = ri.activityInfo.packageName;
+                        }
+                    }
+                }
+                if (targetPkg != null) {
+                    intent.setPackage(targetPkg);
+                }
+
                 context.startActivity(intent);
                 session.write("\033]9002;INSTALL;SUCCESS\007");
             } catch (Throwable t) {
