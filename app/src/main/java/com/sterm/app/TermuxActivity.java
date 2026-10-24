@@ -67,6 +67,9 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * A terminal emulator activity.
@@ -450,12 +453,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     /**
-     * Handle deep links with scheme "sterm://".
+     * Handle deep links with scheme "sterm:" or "sterm://".
      * Supports:
-     * - sterm://open (bring to front, preserve or create session)
-     * - sterm://open?sess=2 (switch to session 2)
-     * - sterm://type?cmd=git%20status (safely type into current session without Enter)
-     * - sterm://type?cmd=htop&sess=1 (switch to session 1 and type htop)
+     * - sterm:open or sterm://open (bring to front, preserve or create session)
+     * - sterm:open?sess=2 or sterm://open?sess=2 (switch to session 2)
+     * - sterm:type?cmd=git%20status or sterm://type?cmd=git%20status (safely type into current session without Enter)
+     * - sterm:htop or sterm:git status (direct command shorthand)
+     * - sterm:htop?sess=1 (direct command with target session)
      */
     public void handleDeepLinkIntent(Intent intent) {
         if (intent == null) return;
@@ -464,13 +468,57 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         Logger.logDebug(LOG_TAG, "handleDeepLinkIntent: " + uri);
 
-        String sessParam = uri.getQueryParameter("sess");
-        if (sessParam == null) sessParam = uri.getQueryParameter("session");
+        String raw = uri.getSchemeSpecificPart();
+        if (raw == null) raw = "";
+        if (raw.startsWith("//")) raw = raw.substring(2);
 
-        String cmd = uri.getQueryParameter("cmd");
-        if (cmd == null) cmd = uri.getQueryParameter("c");
-        if (cmd == null) cmd = uri.getQueryParameter("text");
-        if (cmd == null) cmd = uri.getQueryParameter("input");
+        String pathPart = raw;
+        String queryPart = null;
+        int qIndex = raw.indexOf('?');
+        if (qIndex >= 0) {
+            pathPart = raw.substring(0, qIndex);
+            queryPart = raw.substring(qIndex + 1);
+        }
+
+        pathPart = Uri.decode(pathPart).trim();
+
+        Map<String, String> params = new HashMap<>();
+        if (queryPart != null && !queryPart.isEmpty()) {
+            for (String pair : queryPart.split("&")) {
+                int eq = pair.indexOf('=');
+                if (eq >= 0) {
+                    String key = Uri.decode(pair.substring(0, eq)).trim().toLowerCase(Locale.ENGLISH);
+                    String val = Uri.decode(pair.substring(eq + 1));
+                    params.put(key, val);
+                }
+            }
+        }
+
+        String sessParam = params.get("sess");
+        if (sessParam == null) sessParam = params.get("session");
+        if (sessParam == null && uri.isHierarchical()) {
+            sessParam = uri.getQueryParameter("sess");
+            if (sessParam == null) sessParam = uri.getQueryParameter("session");
+        }
+
+        String cmd = params.get("cmd");
+        if (cmd == null) cmd = params.get("c");
+        if (cmd == null) cmd = params.get("text");
+        if (cmd == null) cmd = params.get("input");
+        if (cmd == null && uri.isHierarchical()) {
+            cmd = uri.getQueryParameter("cmd");
+            if (cmd == null) cmd = uri.getQueryParameter("c");
+            if (cmd == null) cmd = uri.getQueryParameter("text");
+            if (cmd == null) cmd = uri.getQueryParameter("input");
+        }
+
+        // Direct command shorthand: if no cmd query param given, and pathPart is not "open", "type", "run"
+        if (cmd == null && !pathPart.isEmpty()
+                && !"open".equalsIgnoreCase(pathPart)
+                && !"type".equalsIgnoreCase(pathPart)
+                && !"run".equalsIgnoreCase(pathPart)) {
+            cmd = pathPart;
+        }
 
         final String finalSess = sessParam;
         // Strictly single-line: replace newlines and carriage returns to prevent auto-execution
