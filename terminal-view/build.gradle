@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 android {
-    namespace "com.sterm.view"
+    namespace "com.termux.view"
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
 
     dependencies {
