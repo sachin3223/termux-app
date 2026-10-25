@@ -300,14 +300,15 @@ public final class TerminalEmulator {
 
     /**
      * Block size for the OSC 9001 pixel block bar, in dp.
-     * Each block is a square of this size. 3dp default.
+     * 1dp = one physical pixel per logical pixel — maximum sharpness.
      */
-    public static final int STATUS_BAR_BLOCK_SIZE_DP = 3;
+    public static final int STATUS_BAR_BLOCK_SIZE_DP = 1;
 
     /**
      * Number of vertical block rows for the OSC 9001 pixel block bar.
+     * At 1dp/block and 40dp total height, this gives 40 pixel rows — ultra sharp.
      */
-    public static final int STATUS_BAR_NUM_ROWS = 13;
+    public static final int STATUS_BAR_NUM_ROWS = 40;
 
     /**
      * ARGB colors for each block in the OSC 9001 2D block grid.

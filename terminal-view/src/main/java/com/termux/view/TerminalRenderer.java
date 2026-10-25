@@ -9,6 +9,8 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalRow;
@@ -276,48 +278,69 @@ public final class TerminalRenderer {
 
     /**
      * Render the Termux pixel block status bar overlay (OSC 9001).
-     * Drawn at the top of the canvas, independent of the terminal buffer.
-     * Blocks are square (blockSizePx x blockSizePx) and centered horizontally.
      *
-     * @param blocks      Array of ARGB colors for each block (row-major), or null if bar is clear.
-     * @param cols        Number of block columns across width.
-     * @param rows        Number of block rows vertically (e.g. 10).
-     * @param canvas      Canvas to draw on.
-     * @param palette     Terminal palette for background color fallback.
-     * @param viewWidth   Width of the view.
-     * @param barHeightPx Total height of the bar area in pixels.
-     * @param padLeft     Left padding in pixels to center the blocks.
-     * @param blockSizePx Pixel width and height of each square block.
+     * Uses a hardware-accelerated Bitmap blit instead of per-pixel drawRect calls.
+     * When blockSizePx == 1 (1dp blocks), the pixel array is written directly into a
+     * cols×rows Bitmap and stretched to fill the bar — zero per-pixel Paint overhead,
+     * GPU-composited in a single drawBitmap call.
+     *
+     * Thread-safety: blocks[] is a snapshot copy made by TerminalView before calling
+     * here, so this method is safe to call from the UI thread with no locking.
+     *
+     * @param blocks        Snapshot of ARGB block colors (row-major), or null if bar is clear.
+     * @param cols          Block columns across the pixel-grid width.
+     * @param rows          Block rows (== STATUS_BAR_NUM_ROWS).
+     * @param canvas        Canvas to draw on (hardware-accelerated by Android view system).
+     * @param palette       Terminal colour palette for background fallback.
+     * @param viewWidth     View width in pixels.
+     * @param barHeightPx   Total bar height in pixels.
+     * @param padLeft       Left padding so grid is horizontally centred.
+     * @param blockSizePx   Physical pixels per block edge (≥ 1).
+     * @param cachedBitmap  AtomicReference holding a reusable Bitmap (may be null or wrong size).
+     *                      Updated in-place to avoid allocating a new Bitmap every frame.
      */
     public void renderBlockBar(int[] blocks, int cols, int rows, Canvas canvas, int[] palette,
-                               int viewWidth, int barHeightPx, int padLeft, int blockSizePx) {
+                               int viewWidth, int barHeightPx, int padLeft, int blockSizePx,
+                               AtomicReference<Bitmap> cachedBitmap) {
         if (barHeightPx <= 0 || viewWidth <= 0) return;
 
         final int bgColor = (palette != null && palette.length > TextStyle.COLOR_INDEX_BACKGROUND)
                 ? palette[TextStyle.COLOR_INDEX_BACKGROUND] : 0xFF000000;
 
         mTextPaint.setStyle(Paint.Style.FILL);
-
-        // Draw background across the entire top bar area
+        // Fill background for the whole top bar strip
         mTextPaint.setColor(bgColor);
         canvas.drawRect(0, 0, viewWidth, barHeightPx, mTextPaint);
 
         if (blocks == null || cols <= 0 || rows <= 0 || blockSizePx <= 0) return;
 
-        for (int r = 0; r < rows; r++) {
-            float top = r * blockSizePx;
-            float bottom = top + blockSizePx;
-            int rowOffset = r * cols;
-
-            for (int c = 0; c < cols; c++) {
-                int idx = rowOffset + c;
-                if (idx >= blocks.length) break;
-                int color = blocks[idx];
-                mTextPaint.setColor(color);
-                float left = padLeft + c * blockSizePx;
-                float right = left + blockSizePx;
-                canvas.drawRect(left, top, right, bottom, mTextPaint);
-            }
+        // --- Hardware Bitmap Blit ---
+        // Build/reuse a Bitmap whose dimensions are exactly (cols × rows) pixels.
+        // Each entry in `blocks` becomes exactly one pixel. Android's hardware-
+        // accelerated drawBitmap then scales/stretches it to the bar area in one
+        // GPU composite pass — far cheaper than thousands of drawRect calls.
+        Bitmap bmp = cachedBitmap.get();
+        if (bmp == null || bmp.isRecycled() || bmp.getWidth() != cols || bmp.getHeight() != rows) {
+            if (bmp != null && !bmp.isRecycled()) bmp.recycle();
+            bmp = Bitmap.createBitmap(cols, rows, Bitmap.Config.ARGB_8888);
+            cachedBitmap.set(bmp);
         }
+
+        // Ensure full opacity — caller's ARGB values may omit the alpha byte
+        // (OSC 9001 protocol only specifies RRGGBB), so force 0xFF alpha.
+        int pixelCount = Math.min(blocks.length, cols * rows);
+        int[] pixels = new int[pixelCount];
+        for (int i = 0; i < pixelCount; i++) {
+            pixels[i] = blocks[i] | 0xFF000000;
+        }
+        bmp.setPixels(pixels, 0, cols, 0, 0, cols, rows);
+
+        // Stretch the bitmap to fill exactly the block-grid area (centred by padLeft).
+        int gridWidthPx = cols * blockSizePx;
+        int gridHeightPx = rows * blockSizePx;
+        Rect src = new Rect(0, 0, cols, rows);
+        RectF dst = new RectF(padLeft, 0, padLeft + gridWidthPx, gridHeightPx);
+        mTextPaint.setFilterBitmap(false); // nearest-neighbour → pixel-perfect edges
+        canvas.drawBitmap(bmp, src, dst, mTextPaint);
     }
 }

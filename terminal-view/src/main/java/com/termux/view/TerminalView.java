@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Typeface;
 import android.os.Build;
@@ -42,6 +43,8 @@ import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 /** View displaying and interacting with a {@link TerminalSession}. */
 public final class TerminalView extends View {
 
@@ -72,6 +75,13 @@ public final class TerminalView extends View {
 
     float mScaleFactor = 1.f;
     final GestureAndScaleRecognizer mGestureRecognizer;
+
+    /**
+     * Reusable Bitmap for OSC 9001 block bar rendering.
+     * Swapped via AtomicReference so it can be recycled and recreated without synchronization.
+     * Owned by the UI thread (onDraw), written only there.
+     */
+    private final AtomicReference<Bitmap> mBlockBarBitmap = new AtomicReference<>(null);
 
     /** Keep track of where mouse touch event started which we report as mouse scroll. */
     private int mMouseScrollStartX = -1, mMouseScrollStartY = -1;
@@ -1101,8 +1111,13 @@ public final class TerminalView extends View {
 
             // Render the Termux pixel block status bar overlay (OSC 9001) on top.
             // Independent of terminal buffer: clear/scroll/alt-buffer won't affect it.
+            // Take a snapshot of the block array to avoid holding emulator lock during draw.
+            int[] blockSnapshot = mEmulator.mStatusBarBlocks;
+            if (blockSnapshot != null) {
+                blockSnapshot = blockSnapshot.clone();
+            }
             mRenderer.renderBlockBar(
-                mEmulator.mStatusBarBlocks,
+                blockSnapshot,
                 cols,
                 TerminalEmulator.STATUS_BAR_NUM_ROWS,
                 canvas,
@@ -1110,7 +1125,8 @@ public final class TerminalView extends View {
                 viewWidth,
                 barHeightPx,
                 padLeft,
-                blockSizePx
+                blockSizePx,
+                mBlockBarBitmap
             );
 
             // render the text selection handles
