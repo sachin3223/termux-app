@@ -371,6 +371,19 @@ public final class TerminalEmulator {
     }
 
     /**
+     * Whether this terminal emulator session renders in 1:1 square cell mode (column width == row height).
+     */
+    private boolean mSquareCells = false;
+
+    public boolean isSquareCells() {
+        return mSquareCells;
+    }
+
+    public void setSquareCells(boolean squareCells) {
+        this.mSquareCells = squareCells;
+    }
+
+    /**
      * If `true`, then `processCodePoint()` will directly call `receiveOsc()` as a fast path
      * without additional checks.
      *

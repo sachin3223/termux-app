@@ -712,7 +712,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             TextInputDialogUtils.textInput(TermuxActivity.this, R.string.title_create_named_session, null,
                 R.string.action_create_named_session_confirm, text -> mTermuxTerminalSessionActivityClient.addNewSession(false, text),
                 R.string.action_new_session_failsafe, text -> mTermuxTerminalSessionActivityClient.addNewSession(true, text),
-                -1, null, null);
+                R.string.action_new_session_square, text -> mTermuxTerminalSessionActivityClient.addNewSession(false, text, true),
+                null);
             return true;
         });
     }

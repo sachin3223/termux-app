@@ -372,6 +372,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName) {
+        addNewSession(isFailSafe, sessionName, false);
+    }
+
+    public void addNewSession(boolean isFailSafe, String sessionName, boolean isSquareCells) {
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;
 
@@ -392,6 +396,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             if (newTermuxSession == null) return;
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();
+            if (isSquareCells && newTerminalSession.getEmulator() != null) {
+                newTerminalSession.getEmulator().setSquareCells(true);
+            }
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();

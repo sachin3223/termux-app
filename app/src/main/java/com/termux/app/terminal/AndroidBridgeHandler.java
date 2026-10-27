@@ -36,7 +36,9 @@ import com.termux.app.TermuxService;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.net.uri.UriUtils;
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalOutput;
+import com.termux.terminal.TerminalSession;
 
 import java.io.File;
 import java.util.List;
@@ -57,7 +59,7 @@ public final class AndroidBridgeHandler {
 
     public static void handleCommand(@NonNull Context context, @NonNull TerminalOutput session, String textParameter) {
         if (textParameter == null || textParameter.trim().isEmpty() || "HELP".equalsIgnoreCase(textParameter.trim())) {
-            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK,AUTH,INSTALL\007");
+            session.write("\033]9002;HELP;TOAST,SNACKBAR,VIBRATE,KEYBOARD,OPEN,TORCH,CLIP,BATTERY,VOLUME,TTS,WAKELOCK,AUTH,INSTALL,SQUARE\007");
             return;
         }
 
@@ -105,6 +107,9 @@ public final class AndroidBridgeHandler {
                     break;
                 case "TTS":
                     handleTts(context, rest);
+                    break;
+                case "SQUARE":
+                    handleSquareCells(context, session, rest);
                     break;
                 default:
                     Logger.logWarn(LOG_TAG, "Unknown OSC 9002 subcmd: " + subcmd);
@@ -679,6 +684,45 @@ public final class AndroidBridgeHandler {
             } catch (Throwable t) {
                 Logger.logError(LOG_TAG, "Install error: " + t.getMessage());
                 session.write("\033]9002;INSTALL;FAILED;" + t.getMessage() + "\007");
+            }
+        });
+    }
+
+    private static void handleSquareCells(Context context, TerminalOutput session, String arg) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                if (session instanceof TerminalSession) {
+                    TerminalSession termSession = (TerminalSession) session;
+                    TerminalEmulator emulator = termSession.getEmulator();
+                    if (emulator != null) {
+                        boolean enable;
+                        if (arg == null || arg.isEmpty() || "TOGGLE".equalsIgnoreCase(arg)) {
+                            enable = !emulator.isSquareCells();
+                        } else if ("0".equals(arg) || "OFF".equalsIgnoreCase(arg) || "FALSE".equalsIgnoreCase(arg)) {
+                            enable = false;
+                        } else if ("1".equals(arg) || "ON".equalsIgnoreCase(arg) || "TRUE".equalsIgnoreCase(arg)) {
+                            enable = true;
+                        } else if ("?".equals(arg) || "STATUS".equalsIgnoreCase(arg) || "GET".equalsIgnoreCase(arg)) {
+                            session.write("\033]9002;SQUARE;" + (emulator.isSquareCells() ? "1" : "0") + "\007");
+                            return;
+                        } else {
+                            enable = true;
+                        }
+
+                        emulator.setSquareCells(enable);
+
+                        if (context instanceof TermuxActivity) {
+                            TermuxActivity act = (TermuxActivity) context;
+                            if (act.getCurrentSession() == termSession) {
+                                act.getTerminalView().updateSize();
+                                act.getTerminalView().invalidate();
+                            }
+                        }
+                        session.write("\033]9002;SQUARE;OK;" + (enable ? "1" : "0") + "\007");
+                    }
+                }
+            } catch (Throwable t) {
+                Logger.logError(LOG_TAG, "SquareCells error: " + t.getMessage());
             }
         });
     }

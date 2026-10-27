@@ -196,8 +196,8 @@ public final class TerminalView extends View {
 
                     if (mEmulator.isMouseTrackingActive()) {
                         distanceX += mScrollRemainderX;
-                        int deltaCols = (int) (distanceX / mRenderer.mFontWidth);
-                        mScrollRemainderX = distanceX - deltaCols * mRenderer.mFontWidth;
+                        int deltaCols = (int) (distanceX / getFontWidth());
+                        mScrollRemainderX = distanceX - deltaCols * getFontWidth();
                         if (deltaCols != 0) {
                             doHorizontalScroll(e, deltaCols);
                         }
@@ -566,7 +566,7 @@ public final class TerminalView extends View {
      * @return Array with the column and row.
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
-        int column = (int) (event.getX() / mRenderer.mFontWidth);
+        int column = (int) (event.getX() / getFontWidth());
         int barHeightPx = getStatusBarHeightPx();
         int row = (int) ((event.getY() - barHeightPx - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
         if (row < 0) row = 0;
@@ -1048,11 +1048,11 @@ public final class TerminalView extends View {
         }
 
         // Set to 80 and 24 if you want to enable vttest.
-        int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
+        int newColumns = Math.max(4, (int) (viewWidth / getFontWidth()));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent - barHeightPx) / mRenderer.mFontLineSpacing);
 
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
-            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
+            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             if (mEmulator != null) {
                 mEmulator.setStatusBarCols(cols);
@@ -1142,8 +1142,19 @@ public final class TerminalView extends View {
         return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows);
     }
 
+    public float getFontWidth() {
+        TerminalEmulator em = mEmulator;
+        if (em == null && mTermSession != null) {
+            em = mTermSession.getEmulator();
+        }
+        if (em != null && em.isSquareCells()) {
+            return mRenderer.mFontLineSpacing;
+        }
+        return mRenderer.mFontWidth;
+    }
+
     public int getCursorX(float x) {
-        return (int) (x / mRenderer.mFontWidth);
+        return (int) (x / getFontWidth());
     }
 
     public int getCursorY(float y) {
@@ -1154,7 +1165,7 @@ public final class TerminalView extends View {
         if (cx > mEmulator.mColumns) {
             cx = mEmulator.mColumns;
         }
-        return Math.round(cx * mRenderer.mFontWidth);
+        return Math.round(cx * getFontWidth());
     }
 
     public int getPointY(int cy) {
