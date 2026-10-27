@@ -1,6 +1,13 @@
 package com.termux.terminal;
 
 import android.util.Base64;
+import android.util.Log;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -344,6 +351,23 @@ public final class TerminalEmulator {
             }
             mStatusBarBlocks = newBlocks;
         }
+    }
+
+    /**
+     * Resolve a file path for status bar raw binary RGB file operations (OSC 9001;2 and OSC 9001;3).
+     * Expands "~/" to the standard Termux home directory, or prepends it if path is relative.
+     */
+    private static File resolveStatusBarFile(String rawPath) {
+        if (rawPath == null) return null;
+        String path = rawPath.trim();
+        if (path.isEmpty()) return null;
+        String homeDir = "/data/data/com.termux/files/home";
+        if (path.startsWith("~/")) {
+            path = homeDir + path.substring(1);
+        } else if (!path.startsWith("/")) {
+            path = homeDir + "/" + path;
+        }
+        return new File(path);
     }
 
     /**
@@ -3068,8 +3092,8 @@ public final class TerminalEmulator {
                 //   (empty)               → clear/reset bar
                 //   0 ; <c> ; <r>         → get block color  → \e]9001;0;<c>;<r>;<RRGGBB>\a
                 //   1 ; <c> ; <r> ; <HEX> → set block color
-                //   2 ; <C>,<C>,…        → set all blocks row-major (r0c0, r0c1, ...)
-                //   3                    → get all colors row-major → \e]9001;3;<C>,<C>,…\a
+                //   2 ; <file_path>       → set all blocks from raw binary RGB file (3 bytes/pixel)
+                //   3 ; <file_path>       → get all blocks saved to raw binary RGB file (3 bytes/pixel)
                 //   4                    → get grid size    → \e]9001;4;<cols>;<rows>\a
 
                 if (textParameter.isEmpty()) {
@@ -3128,35 +3152,76 @@ public final class TerminalEmulator {
                         }
                         break;
                     }
-                    case 2: { // set all blocks: 2;<RRGGBB>,<RRGGBB>,...
-                        if (rest1.isEmpty()) break;
-                        String[] parts = rest1.split(",");
+                    case 2: { // set all blocks from raw binary RGB file: 2;<file_path>
+                        if (rest1.isEmpty() || mStatusBarCols <= 0) break;
+                        File file = resolveStatusBarFile(rest1);
+                        if (file == null || !file.exists() || !file.isFile() || !file.canRead()) {
+                            Log.w("TerminalEmulator", "OSC 9001;2: file not found or not a regular readable file: " + file);
+                            break;
+                        }
                         int total = mStatusBarCols * STATUS_BAR_NUM_ROWS;
-                        int[] blocks = new int[total > 0 ? total : parts.length];
-                        int limit = Math.min(parts.length, blocks.length);
-                        for (int bi = 0; bi < limit; bi++) {
-                            try {
-                                blocks[bi] = (int)(0xFF000000L | Long.parseLong(parts[bi].trim(), 16));
-                            } catch (NumberFormatException e) {
-                                blocks[bi] = 0xFF000000; // opaque black on bad input
+                        if (total <= 0) break;
+
+                        int bytesToRead = total * 3;
+                        byte[] raw = new byte[bytesToRead];
+                        int totalRead = 0;
+                        try (InputStream in = new FileInputStream(file)) {
+                            while (totalRead < bytesToRead) {
+                                int count = in.read(raw, totalRead, bytesToRead - totalRead);
+                                if (count < 0) break;
+                                totalRead += count;
                             }
+                        } catch (Exception e) {
+                            Log.w("TerminalEmulator", "OSC 9001;2 read error: " + e.getMessage());
+                            break;
+                        }
+
+                        int[] blocks = new int[total];
+                        int pixelCount = totalRead / 3;
+                        for (int bi = 0; bi < pixelCount; bi++) {
+                            int r = raw[bi * 3] & 0xFF;
+                            int g = raw[bi * 3 + 1] & 0xFF;
+                            int b = raw[bi * 3 + 2] & 0xFF;
+                            blocks[bi] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                        }
+                        for (int bi = pixelCount; bi < total; bi++) {
+                            blocks[bi] = 0xFF000000;
                         }
                         mStatusBarBlocks = blocks;
                         break;
                     }
-                    case 3: { // get all colors: 3
-                        if (mStatusBarBlocks == null) {
-                            mSession.write("\033]9001;3;\007");
+                    case 3: { // get all colors to raw binary RGB file: 3;<file_path>
+                        if (rest1.isEmpty() || mStatusBarCols <= 0) break;
+                        File file = resolveStatusBarFile(rest1);
+                        if (file == null) break;
+                        if (file.exists() && !file.isFile()) {
+                            Log.w("TerminalEmulator", "OSC 9001;3: path exists but is not a regular file: " + file);
                             break;
                         }
-                        StringBuilder sb = new StringBuilder();
-                        for (int bi = 0; bi < mStatusBarBlocks.length; bi++) {
-                            if (bi > 0) sb.append(',');
-                            sb.append(String.format(Locale.ENGLISH, "%06X",
-                                mStatusBarBlocks[bi] & 0xFFFFFF));
+                        File parent = file.getParentFile();
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs();
                         }
-                        mSession.write(String.format(Locale.ENGLISH,
-                            "\033]9001;3;%s\007", sb));
+
+                        int total = mStatusBarCols * STATUS_BAR_NUM_ROWS;
+                        if (total <= 0) break;
+
+                        byte[] raw = new byte[total * 3];
+                        if (mStatusBarBlocks != null) {
+                            int limit = Math.min(mStatusBarBlocks.length, total);
+                            for (int bi = 0; bi < limit; bi++) {
+                                int color = mStatusBarBlocks[bi];
+                                raw[bi * 3]     = (byte) ((color >> 16) & 0xFF);
+                                raw[bi * 3 + 1] = (byte) ((color >> 8) & 0xFF);
+                                raw[bi * 3 + 2] = (byte) (color & 0xFF);
+                            }
+                        }
+                        try (OutputStream out = new FileOutputStream(file)) {
+                            out.write(raw);
+                            out.flush();
+                        } catch (Exception e) {
+                            Log.w("TerminalEmulator", "OSC 9001;3 write error: " + e.getMessage());
+                        }
                         break;
                     }
                     case 4: { // get grid size: 4 -> \e]9001;4;<cols>;<rows>\a
